@@ -24,6 +24,16 @@ PASS=()
 [ -n "${PROBE_HOST_LO:-}" ] && PASS+=(--setenv PROBE_HOST_LO "$PROBE_HOST_LO")
 [ -n "${PROBE_HOST_LAN:-}" ] && PASS+=(--setenv PROBE_HOST_LAN "$PROBE_HOST_LAN")
 
+# Step 3: if BOXER_BIN points at the boxer binary, bind it in and wrap the
+# workload with it, so seccomp + Landlock apply to the command (and the
+# probe) but not to the socat forwarder that must keep running.
+WRAP=""
+if [ -n "${BOXER_BIN:-}" ]; then
+  BINDS+=(--ro-bind "$BOXER_BIN" /boxer)
+  WRAP="/boxer ${BOXER_ARGS:-} --"
+fi
+PASS+=(--setenv BOX_WRAP "$WRAP")
+
 exec bwrap \
   --unshare-all --unshare-user --die-with-parent --new-session \
   --ro-bind /usr /usr --symlink usr/lib /lib --symlink usr/lib /lib64 \
@@ -46,4 +56,4 @@ exec bwrap \
     for i in 1 2 3 4 5 6 7 8 9 10; do
       socat -u OPEN:/dev/null TCP:127.0.0.1:3128 2>/dev/null && break; sleep 0.1
     done
-    exec "$@"' -- "$@"
+    exec $BOX_WRAP "$@"' -- "$@"

@@ -1,0 +1,14 @@
+[package]
+name = "boxer"
+version = "0.1.0"
+edition = "2021"
+description = "plybox lab: apply a seccomp syscall allowlist + Landlock, then exec the target"
+
+[dependencies]
+libc = "0.2"
+seccompiler = "0.5"
+landlock = "0.4"
+
+[profile.release]
+opt-level = "s"
+strip = true

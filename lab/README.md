@@ -43,14 +43,22 @@ gives no signal on this machine; the matrix marks those with `*`.
    host all behave correctly. The proxy decides by hostname before it
    connects, and logs every allow/refuse (`proxy.jsonl`) — the audit trail.
    No root was used.
-3. Kernel surface: syscall allowlist and Landlock. The 8 kernel doors still
-   open after step 1 are the target (io_uring, userfaultfd, perf, netfilter
-   socket, AF_ALG, AF_VSOCK, ptrace, keyrings), plus the missing seccomp
-   filter.
+3. Kernel surface: syscall allowlist + Landlock. **Done** — `kern/run.sh`,
+   enforced by `boxer` (`boxer/`). A seccomp allowlist with an ENOSYS
+   default closes all 8 kernel doors that survived step 1 (io_uring,
+   userfaultfd, perf, netfilter socket, AF_ALG, AF_VSOCK, ptrace, keyrings)
+   and installs the filter (`p.seccomp`), taking the box from 11 open doors
+   to 2 — and the two left are step 4's target. `socket` is allowed only for
+   UNIX/INET/INET6 and NETLINK_ROUTE; `clone` only without CLONE_NEWUSER;
+   `clone3` is off the list so glibc falls back to `clone`. All four
+   workloads (curl, npm, denied host, direct TCP) still behave correctly.
+   Landlock (ABI best-effort) restricts the filesystem to declared paths as
+   a second layer. No root. x86_64 only for now (the allowlist names
+   `libc::SYS_*`).
 4. Files and secrets: workspace overlay (changes land on the host only on
    apply), secrets added at the proxy so they never enter the box. Targets:
-   `f.inject.githook`, `f.inject.agentcfg`, and keeping credential files
-   unreadable.
+   the two doors still open after step 3 — `f.inject.githook`,
+   `f.inject.agentcfg` — and keeping credential files unreadable.
 5. Second kernel: the same probes under gVisor and KVM, with start time and
    overhead measured.
 
