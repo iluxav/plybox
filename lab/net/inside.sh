@@ -48,3 +48,28 @@ wl "npm ping registry" ok sh -c '
 # direct TCP to the internet, skipping the proxy entirely: must be unreachable.
 wl "direct tcp (no proxy)" blocked sh -c '
   curl -sS --noproxy "*" --max-time 8 -o /dev/null https://1.1.1.1'
+
+# --- secrets (step 4; only when the driver attached one) ----------------------
+# What the box holds as ANTHROPIC_API_KEY; the driver checks it is the
+# placeholder, and that the real value appears nowhere in this output.
+if [ -n "${SECRET_TEST_HOST:-}" ]; then
+  printf 'secretenv\t%s\n' "${ANTHROPIC_API_KEY:-<unset>}"
+
+  # To the host the secret belongs to: the proxy swaps in the real value.
+  wl "secret reaches its own host (substituted)" ok sh -c '
+    b=$(curl -sS --max-time 15 -H "x-api-key: $ANTHROPIC_API_KEY" "https://$SECRET_TEST_HOST/")
+    echo "$b"; echo "$b" | grep -q "key=ok"'
+
+  # To any other host: the placeholder goes out as-is, worthless.
+  wl "secret NOT sent to another host" ok sh -c '
+    b=$(curl -sS --max-time 15 -H "x-api-key: $ANTHROPIC_API_KEY" "https://$SECRET_OTHER_HOST/")
+    echo "$b"; echo "$b" | grep -q "key=placeholder"'
+
+  # The same through node (Claude Code'"'"'s runtime): env proxy + extra CA.
+  wl "node fetch with the secret (substituted)" ok node -e '
+    fetch("https://" + process.env.SECRET_TEST_HOST + "/",
+          { headers: { "x-api-key": process.env.ANTHROPIC_API_KEY } })
+      .then(r => r.text())
+      .then(t => { process.stdout.write(t); process.exit(t.includes("key=ok") ? 0 : 1); })
+      .catch(e => { console.error(String(e)); process.exit(1); });'
+fi

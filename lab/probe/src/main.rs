@@ -81,6 +81,9 @@ const PROBES: &[Probe] = &[
     Probe { id: "n.host.lan", why: "Services on the host's LAN address", run: n_host_lan },
     Probe { id: "n.metadata", why: "Cloud metadata service (instance credentials)", run: n_metadata },
     // --- resources --------------------------------------------------------
+    // Active tests: they create processes and allocate memory until a limit
+    // bites, so they do not depend on seeing the cgroup tree from inside.
+    // Both are capped (PROBE_FORK_CAP, PROBE_MEM_MB) so they stay harmless.
     Probe { id: "q.pids", why: "No process limit: a fork bomb takes the host down", run: q_pids },
     Probe { id: "q.mem", why: "No memory limit: one agent can starve the host", run: q_mem },
 ];
@@ -145,6 +148,7 @@ fn run(p: &Probe) {
         match libc::WTERMSIG(status) {
             libc::SIGALRM => "NA\ttimed out".to_string(),
             libc::SIGSYS => "BLOCKED\tkilled by the syscall filter (SIGSYS)".to_string(),
+            libc::SIGKILL => "BLOCKED\tkilled by SIGKILL (the OOM killer, or a hard limit)".to_string(),
             sig => format!("BLOCKED\tkilled by signal {sig}"),
         }
     } else {
@@ -722,19 +726,72 @@ fn n_metadata() -> R {
 
 // ---------------------------------------------------------- resources
 
+/// Fork paused children until the kernel refuses or the cap is reached.
+/// Children die with us (PR_SET_PDEATHSIG) and are killed and reaped here.
 fn q_pids() -> R {
-    match cgroup_limit("pids.max") {
-        None => (Na, "cgroup tree not visible from here".into()),
-        Some(None) => (Allowed, "pids.max is `max` all the way up".into()),
-        Some(Some(n)) if n > 65536 => (Allowed, format!("tightest pids.max is {n}: not a fork-bomb limit")),
-        Some(Some(n)) => (Blocked, format!("pids.max {n}")),
+    let cap: usize = env("PROBE_FORK_CAP").and_then(|v| v.parse().ok()).unwrap_or(2000);
+    let mut kids: Vec<libc::pid_t> = Vec::with_capacity(cap);
+    let mut refused = String::new();
+    while kids.len() < cap {
+        let pid = unsafe { libc::fork() };
+        if pid < 0 {
+            refused = os_err();
+            break;
+        }
+        if pid == 0 {
+            unsafe {
+                libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
+                libc::pause();
+                libc::_exit(0);
+            }
+        }
+        kids.push(pid);
+    }
+    for pid in &kids {
+        unsafe { libc::kill(*pid, libc::SIGKILL) };
+    }
+    for pid in &kids {
+        unsafe { libc::waitpid(*pid, std::ptr::null_mut(), 0) };
+    }
+    let limit = cgroup_limit("pids.max").flatten().map(|n| format!(" (pids.max {n})")).unwrap_or_default();
+    if kids.len() >= cap {
+        (Allowed, format!("created {cap} extra processes without hitting a limit{limit}"))
+    } else {
+        (Blocked, format!("fork refused after {} extra processes: {refused}{limit}", kids.len()))
     }
 }
 
+/// Map and touch memory in 64 MiB steps up to the cap. Under a cgroup
+/// memory limit the kernel OOM-kills this child, which the runner reports
+/// as "killed by SIGKILL"; without one the whole cap is reached.
 fn q_mem() -> R {
-    match cgroup_limit("memory.max") {
-        None => (Na, "cgroup tree not visible from here".into()),
-        Some(None) => (Allowed, "memory.max is `max` all the way up".into()),
-        Some(Some(n)) => (Blocked, format!("memory.max {} MiB", n / (1024 * 1024))),
+    let cap_mb: usize = env("PROBE_MEM_MB").and_then(|v| v.parse().ok()).unwrap_or(1024);
+    const CHUNK: usize = 64 * 1024 * 1024;
+    let mut held: Vec<*mut u8> = Vec::new();
+    let mut mb = 0;
+    while mb < cap_mb {
+        let p = unsafe {
+            libc::mmap(
+                std::ptr::null_mut(),
+                CHUNK,
+                libc::PROT_READ | libc::PROT_WRITE,
+                libc::MAP_PRIVATE | libc::MAP_ANONYMOUS | libc::MAP_POPULATE,
+                -1,
+                0,
+            )
+        };
+        if p == libc::MAP_FAILED {
+            return (Blocked, format!("allocation refused at {mb} MiB: {}", os_err()));
+        }
+        let p = p as *mut u8;
+        let mut off = 0;
+        while off < CHUNK {
+            unsafe { p.add(off).write_volatile(1) };
+            off += 4096;
+        }
+        held.push(p);
+        mb += 64;
     }
+    let limit = cgroup_limit("memory.max").flatten().map(|n| format!(" (memory.max {} MiB)", n / (1024 * 1024))).unwrap_or_default();
+    (Allowed, format!("allocated and touched {mb} MiB with no limit hit{limit}"))
 }

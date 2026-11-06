@@ -55,20 +55,43 @@ gives no signal on this machine; the matrix marks those with `*`.
    Landlock (ABI best-effort) restricts the filesystem to declared paths as
    a second layer. No root. x86_64 only for now (the allowlist names
    `libc::SYS_*`).
-4. Files and secrets: workspace overlay (changes land on the host only on
-   apply), secrets added at the proxy so they never enter the box. Targets:
-   the two doors still open after step 3 — `f.inject.githook`,
-   `f.inject.agentcfg` — and keeping credential files unreadable.
+4. Files, secrets, limits. **Done** — `full/run.sh`. The box reaches
+   **0 open doors of 41** (1 n/a: no ssh-agent on this host), still with no
+   root:
+   - *Workspace overlay* (`BOX_OVERLAY=1`): `/work` is an overlay over the
+     real directory; writes land in an upper layer only. The two planted
+     files (`.git/hooks/pre-commit`, `.claude/settings.json`) are written
+     inside but never reach the real workspace — measured on the host after
+     the box exits. The upper layer is the review list for a future
+     `plybox apply`.
+   - *Secrets kept outside* (`--secret NAME=VALUE@HOST`): the box holds a
+     placeholder; the proxy terminates TLS for that host only (lab CA, leaf
+     per host), swaps the placeholder for the value in the request head, and
+     re-encrypts. A TLS upstream that knows the real value reports `key=ok`
+     from its own host and `key=placeholder` from any other. Works through
+     curl and through node's `fetch` (`NODE_EXTRA_CA_CERTS`). The real value
+     never appeared in the box's output, stderr or written files.
+   - *Resource limits* via `systemd-run --user --scope -p TasksMax=512
+     -p MemoryMax=512M -p OOMPolicy=continue` around the whole box. The
+     probes now test actively: fork was refused after 504 extra processes;
+     a 1 GiB allocation was OOM-killed at the limit while the box carried on.
+     (`OOMPolicy=stop`, systemd's default, killed the entire box on the
+     first run — a design fact worth remembering.)
 5. Second kernel: the same probes under gVisor and KVM, with start time and
    overhead measured.
 
-## Known limits (from the step-3 review)
+## Known limits (updated after step 4)
 
-- **No resource limits yet.** `q.pids` / `q.mem` read n/a inside every box:
-  the probe cannot see cgroups from inside, and bubblewrap sets none. A
-  runaway process in the box can still exhaust the host. Reports show n/a
-  separately from closed for exactly this reason. Needs real cgroup limits
-  plus a probe that measures them (step 4/5).
+- **Secret substitution is deliberately narrow.** It rewrites the request
+  head only, forces one request per connection (`Connection: close`),
+  speaks HTTP/1.1, and terminates TLS only for hosts that carry a secret.
+  Websockets, HTTP/2 and request bodies are untouched.
+- **Proxy log noise.** Each box start pokes the forwarder once to see it is
+  up; that reaches the proxy as an empty request and is logged as
+  `refused: request head missing`. Harmless, but it inflates the refused
+  count by one per box.
+- **Limits are per box, not per process.** `MemoryMax` covers bwrap, the
+  forwarder and the workload together; the kernel chooses what to kill.
 - **Exfiltration through an allowed host is not stopped.** The proxy caps
   nothing: data can leave inside a legitimate-looking request to any name
   on the allow list. This is inherent to name-based allowlisting.
