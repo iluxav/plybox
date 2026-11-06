@@ -62,6 +62,26 @@ gives no signal on this machine; the matrix marks those with `*`.
 5. Second kernel: the same probes under gVisor and KVM, with start time and
    overhead measured.
 
-Known lab gaps: 13 of 41 probes give no signal on this machine (IPv6, cloud
-metadata, anything needing root); resource limits (`q.*`) are not yet
-enforced by any config here.
+## Known limits (from the step-3 review)
+
+- **No resource limits yet.** `q.pids` / `q.mem` read n/a inside every box:
+  the probe cannot see cgroups from inside, and bubblewrap sets none. A
+  runaway process in the box can still exhaust the host. Reports show n/a
+  separately from closed for exactly this reason. Needs real cgroup limits
+  plus a probe that measures them (step 4/5).
+- **Exfiltration through an allowed host is not stopped.** The proxy caps
+  nothing: data can leave inside a legitimate-looking request to any name
+  on the allow list. This is inherent to name-based allowlisting.
+- **No IP pinning.** The proxy connects to whatever an allowed name resolves
+  to (public addresses only); client TLS validation is what catches a DNS
+  compromise.
+- **`ioctl` is allowed for every request code.** Wider than the rest of the
+  allowlist; `--new-session` blocks the classic TIOCSTI trick, but this
+  deserves its own probe and a request-code filter.
+- **Landlock's in-box effect is unverified.** It is on and works on the host,
+  but no probe yet shows it closing a door the mount namespace had not
+  already closed.
+- **The socat forwarder runs unconfined** inside the box (it must outlive
+  boxer). Real plybox should confine or replace it.
+- 13 of 41 probes give no signal on this machine (IPv6, cloud metadata,
+  anything needing root).

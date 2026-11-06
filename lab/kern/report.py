@@ -53,18 +53,25 @@ def main():
     def v(col, i):
         return data[col].get(i, ("NA",))[0]
 
+    def opened(col, ids):
+        """Open count with the unmeasured count beside it: n/a is not closed."""
+        vs = [v(col, i) for i in ids]
+        open_, na = sum(x == "ALLOWED" for x in vs), sum(x == "NA" for x in vs)
+        return f"{open_} ({na} n/a)" if na else str(open_)
+
     print("# plybox lab — step 3: seccomp allowlist + Landlock (boxer)\n")
     print("`host` = no sandbox. `box.net` = step 2 (namespaces + loopback + proxy). "
-          "`box.boxer` = box.net with the workload wrapped in boxer.\n")
+          "`box.boxer` = box.net with the workload wrapped in boxer. "
+          "Cells show open doors; `(n n/a)` = doors the probe could not measure, which are NOT closed.\n")
 
     print("## Open doors per class\n")
     print("| class | probes | " + " | ".join(COLS) + " |")
     print("|---|---:|" + "---:|" * len(COLS))
     for key, title in CLASSES.items():
         ids = [i for i in order if i.split(".")[0] == key]
-        cells = [str(sum(1 for i in ids if v(c, i) == "ALLOWED")) for c in COLS]
+        cells = [opened(c, ids) for c in COLS]
         print(f"| {title} | {len(ids)} | " + " | ".join(cells) + " |")
-    tot = [str(sum(1 for i in order if v(c, i) == "ALLOWED")) for c in COLS]
+    tot = [opened(c, order) for c in COLS]
     print(f"| **Total** | {len(order)} | " + " | ".join(f"**{t}**" for t in tot) + " |")
 
     # The headline: the 8 kernel doors step 1 left open with no network.

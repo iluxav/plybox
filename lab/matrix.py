@@ -31,10 +31,15 @@ def load(path):
 
 
 def opened(rows, ids):
-    """How many of `ids` are open — or a dash for a config that never ran."""
+    """Open count for `ids`, with the unmeasured count beside it so a door the
+    probe could not see is never mistaken for a closed one. A dash means the
+    config never ran."""
     if not rows:
         return "–"
-    return str(sum(1 for i in ids if rows.get(i, ("NA",))[0] == "ALLOWED"))
+    verdicts = [rows.get(i, ("NA",))[0] for i in ids]
+    open_ = sum(1 for v in verdicts if v == "ALLOWED")
+    na = sum(1 for v in verdicts if v == "NA")
+    return f"{open_} ({na} n/a)" if na else str(open_)
 
 
 def main():
@@ -46,7 +51,7 @@ def main():
     control = data.get("host", {})
 
     print(f"# plybox lab matrix\n\n{(out / 'machine.txt').read_text().strip()}\n")
-    print("OPEN = the attacker step worked. closed = it failed. n/a = cannot tell here.\n")
+    print("OPEN = the attacker step worked. closed = it failed. n/a = the probe could not tell — NOT the same as closed.\n")
 
     # summary: open doors per class, per config
     print("## Open doors per class\n")

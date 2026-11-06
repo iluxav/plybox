@@ -21,8 +21,9 @@ BINDS=()
 # Addresses of host services to probe for reachability (set by the driver),
 # forwarded in so the box can try — and fail — to reach the host.
 PASS=()
-[ -n "${PROBE_HOST_LO:-}" ] && PASS+=(--setenv PROBE_HOST_LO "$PROBE_HOST_LO")
-[ -n "${PROBE_HOST_LAN:-}" ] && PASS+=(--setenv PROBE_HOST_LAN "$PROBE_HOST_LAN")
+for var in PROBE_HOST_LO PROBE_HOST_LAN PROBE_HOST_HOME PROBE_HOST_UID PROBE_OUTSIDE PROBE_SSH_AUTH_SOCK; do
+  [ -n "${!var:-}" ] && PASS+=(--setenv "$var" "${!var}")
+done
 
 # Step 3: if BOXER_BIN points at the boxer binary, bind it in and wrap the
 # workload with it, so seccomp + Landlock apply to the command (and the

@@ -34,15 +34,26 @@ socat -u TCP-LISTEN:$LO_PORT,bind=127.0.0.1,fork,reuseaddr OPEN:/dev/null & PIDS
 [ -n "$LAN_IP" ] && { socat -u TCP-LISTEN:$LAN_PORT,bind="$LAN_IP",fork,reuseaddr OPEN:/dev/null & PIDS+=($!); }
 export PROBE_HOST_LO="127.0.0.1:$LO_PORT"
 export PROBE_HOST_LAN="${LAN_IP:+$LAN_IP:$LAN_PORT}"
+# Same inputs for every column, so the no-sandbox control measures every door
+# and the box's BLOCKED rows mean "tried the real path and failed".
+export PROBE_HOST_HOME="$HOME"
+export PROBE_HOST_UID="$(id -u)"
+export PROBE_SSH_AUTH_SOCK="${SSH_AUTH_SOCK:-}"
 
 ALLOW="api.anthropic.com,registry.npmjs.org,*.anthropic.com"
 mkdir -p "$RUN/sock"
 python3 "$LAB/net/proxy.py" --socket "$RUN/sock/sock" --allow "$ALLOW" --log "$OUT/proxy.jsonl" & PIDS+=($!)
 for i in $(seq 1 50); do [ -S "$RUN/sock/sock" ] && break; sleep 0.1; done
 
+# A fresh git workspace and an "outside" directory per column.
+prepare() {
+  WORK="$RUN/work-$1"; export PROBE_OUTSIDE="$RUN/outside-$1"
+  mkdir -p "$WORK" "$PROBE_OUTSIDE"; git -C "$WORK" init -q
+}
+
 run_box() { # outfile, extra-env...
   local out="$1"; shift
-  local WORK="$RUN/work-$(basename "$out" .tsv)"; mkdir -p "$WORK"; git -C "$WORK" init -q
+  prepare "$(basename "$out" .tsv)"
   cp "$PROBE" "$WORK/probe"; cp "$LAB/net/inside.sh" "$WORK/inside.sh"
   env "$@" bash "$LAB/net/box.sh" "$RUN/sock" "$WORK" -- sh /work/inside.sh /work/probe \
     >"$out" 2>"${out%.tsv}.err" || echo "  box exited nonzero — see ${out%.tsv}.err" >&2
@@ -53,7 +64,9 @@ run_box "$OUT/box.net.tsv"
 echo "running box.boxer (seccomp + landlock)" >&2
 run_box "$OUT/box.boxer.tsv" BOXER_BIN="$BOXER"
 
-( cd "$RUN" && "$PROBE" ) >"$OUT/host.tsv" 2>/dev/null || true
+# The control: no sandbox, same inputs, from its own git workspace.
+prepare host
+( cd "$WORK" && "$PROBE" ) >"$OUT/host.tsv" 2>/dev/null || true
 "$PROBE" --list >"$OUT/probes.tsv"
 
 python3 "$LAB/kern/report.py" "$OUT" | tee "$OUT/report.md"
