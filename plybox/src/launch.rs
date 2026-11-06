@@ -21,6 +21,7 @@ use serde_json::json;
 use crate::policy::Policy;
 use crate::proxy::{Allow, Proxy};
 use crate::record::Record;
+use crate::secrets::{self, Secret, Tls};
 
 const PROXY_PORT: u16 = 3128;
 
@@ -36,7 +37,17 @@ pub fn run(pol: Policy, cmd: Vec<String>, session: Option<PathBuf>, quiet: bool)
     let _ = std::fs::remove_file(&sock);
     let listener = UnixListener::bind(&sock).map_err(|e| format!("proxy socket {}: {e}", sock.display()))?;
     let allow = Allow::parse(&pol.net.allow)?;
-    let proxy = Proxy::new(allow, Arc::clone(&record));
+
+    // Secrets stay here. If there are any, a session CA is made so the
+    // proxy can terminate TLS for their hosts, and the box is told to trust it.
+    let secret_list: Vec<Secret> = secrets::parse(&pol.secret_specs())?;
+    let tls = if secret_list.is_empty() { None } else { Some(Arc::new(Tls::new(&pol.net.trust_ca)?)) };
+    if let Some(t) = &tls {
+        t.write_trust_files(&session, &pol.net.trust_ca)?;
+    }
+    let maps = parse_maps(&pol.net.map)?;
+
+    let proxy = Proxy::new(allow, Arc::clone(&record), secrets::by_host(&secret_list), tls.clone(), maps);
     let acceptor = Arc::clone(&proxy);
     std::thread::spawn(move || acceptor.serve(listener));
 
@@ -44,20 +55,22 @@ pub fn run(pol: Policy, cmd: Vec<String>, session: Option<PathBuf>, quiet: bool)
         "start",
         json!({
             "cmd": cmd, "rootfs": pol.fs.rootfs, "workspace": work, "allow": pol.net.allow,
+            "secrets": secret_list.iter().map(|s| format!("{}@{}", s.name, s.host)).collect::<Vec<_>>(),
             "session": session, "kernel": uname_release(),
         }),
     );
     if !quiet {
         eprintln!(
-            "plybox: box up — network: {}; workspace {} at /work; record {}",
+            "plybox: box up — network: {}; secrets: {}; workspace {} at /work; record {}",
             if pol.net.allow.is_empty() { "none".to_string() } else { pol.net.allow.join(", ") },
+            secret_list.len(),
             work.display(),
             session.join("record.jsonl").display()
         );
     }
 
     let me = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
-    let argv = bwrap_argv(&pol, &work, &session, &me, &cmd)?;
+    let argv = bwrap_argv(&pol, &work, &session, &me, &cmd, &secret_list, tls.is_some())?;
     let status = Command::new(bwrap)
         .args(&argv)
         .status()
@@ -70,7 +83,25 @@ pub fn run(pol: Policy, cmd: Vec<String>, session: Option<PathBuf>, quiet: bool)
     Ok(code)
 }
 
-fn bwrap_argv(pol: &Policy, work: &Path, session: &Path, me: &Path, cmd: &[String]) -> Result<Vec<String>, String> {
+fn parse_maps(entries: &[String]) -> Result<std::collections::HashMap<String, std::net::SocketAddr>, String> {
+    let mut m = std::collections::HashMap::new();
+    for e in entries {
+        let (host, addr) = e.split_once('=').ok_or_else(|| format!("map `{e}`: expected host=ip:port"))?;
+        let addr: std::net::SocketAddr = addr.parse().map_err(|_| format!("map `{e}`: bad ip:port"))?;
+        m.insert(host.trim().to_ascii_lowercase(), addr);
+    }
+    Ok(m)
+}
+
+fn bwrap_argv(
+    pol: &Policy,
+    work: &Path,
+    session: &Path,
+    me: &Path,
+    cmd: &[String],
+    secret_list: &[Secret],
+    trust_session_ca: bool,
+) -> Result<Vec<String>, String> {
     let mut a: Vec<String> = vec![];
     let mut push = |xs: &[&str]| a.extend(xs.iter().map(|s| s.to_string()));
 
@@ -125,6 +156,22 @@ fn bwrap_argv(pol: &Policy, work: &Path, session: &Path, me: &Path, cmd: &[Strin
     for (k, v) in &pol.env {
         env.retain(|(ek, _)| ek != k);
         env.push((k.clone(), v.clone()));
+    }
+    // The session CA, so TLS the proxy terminates is trusted by curl, git,
+    // python and node inside.
+    if trust_session_ca {
+        for k in ["SSL_CERT_FILE", "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE", "GIT_SSL_CAINFO"] {
+            env.retain(|(ek, _)| ek != k);
+            env.push((k.into(), "/run/plybox/bundle.pem".into()));
+        }
+        env.retain(|(ek, _)| ek != "NODE_EXTRA_CA_CERTS");
+        env.push(("NODE_EXTRA_CA_CERTS".into(), "/run/plybox/ca.pem".into()));
+    }
+    // Placeholders last: a secret's name always holds the placeholder, never
+    // a value that slipped in through --env.
+    for s in secret_list {
+        env.retain(|(ek, _)| ek != &s.name);
+        env.push((s.name.clone(), s.placeholder.clone()));
     }
     for (k, v) in &env {
         push(&["--setenv", k, v]);

@@ -46,12 +46,26 @@ hostcheck() {
   done > "$OUT/$1.host.tsv"
 }
 
+# --- the secret test: a throwaway value, a lab CA, two TLS upstreams that
+# know the value (see lab/full/run.sh for the design) ---
+REAL="sk-ant-lab-$(openssl rand -hex 12)"
+SECRET_HOST="secret-test.lab"; OTHER_HOST="other.lab"
+ECHO_A=47881; ECHO_B=47882
+python3 "$LAB/net/proxy.py" mkcert --ca-dir "$RUN/ca" --host "$SECRET_HOST" --host "$OTHER_HOST" >/dev/null
+python3 "$LAB/net/echo.py" --port $ECHO_A --cert "$RUN/ca/$SECRET_HOST.pem" --key "$RUN/ca/$SECRET_HOST.key" --expect "$REAL" --name "$SECRET_HOST" & PIDS+=($!)
+python3 "$LAB/net/echo.py" --port $ECHO_B --cert "$RUN/ca/$OTHER_HOST.pem" --key "$RUN/ca/$OTHER_HOST.key" --expect "$REAL" --name "$OTHER_HOST" & PIDS+=($!)
+sleep 0.3
+
 NODE_DIR="$HOME/.local/share/mise/installs/node"
 echo "running plybox ($("$PLYBOX" version))" >&2
 prepare plybox
 SESSION="$RUN/session"
 "$PLYBOX" run --quiet --session "$SESSION" --work "$WORK" \
   --allow api.anthropic.com --allow '*.anthropic.com' --allow registry.npmjs.org \
+  --allow "$SECRET_HOST" --allow "$OTHER_HOST" \
+  --secret "ANTHROPIC_API_KEY=$REAL@$SECRET_HOST" --trust-ca "$RUN/ca/ca.pem" \
+  --map "$SECRET_HOST=127.0.0.1:$ECHO_A" --map "$OTHER_HOST=127.0.0.1:$ECHO_B" \
+  --env "SECRET_TEST_HOST=$SECRET_HOST" --env "SECRET_OTHER_HOST=$OTHER_HOST" \
   --ro-bind "$NODE_DIR:/opt/node" --env PATH=/opt/node/latest/bin:/usr/local/bin:/usr/bin:/bin \
   --env PROBE_HOST_LO --env PROBE_HOST_LAN --env PROBE_HOST_HOME --env PROBE_HOST_UID \
   --env PROBE_SSH_AUTH_SOCK --env PROBE_OUTSIDE \
@@ -59,6 +73,17 @@ SESSION="$RUN/session"
   || echo "  plybox exited nonzero — see $OUT/plybox.err" >&2
 hostcheck plybox
 cp "$SESSION/record.jsonl" "$OUT/record.jsonl" 2>/dev/null || true
+
+# Host-side secret checks: the real value must appear nowhere the box could
+# write, and the box's copy of the variable must be the placeholder.
+if grep -qF -- "$REAL" "$OUT/plybox.tsv" "$OUT/plybox.err" 2>/dev/null; then
+  printf 's.leak\tALLOWED\tthe real secret appeared in the box'"'"'s output\n'
+else
+  printf 's.leak\tBLOCKED\tthe real secret never appeared in the box'"'"'s output or stderr\n'
+fi >> "$OUT/plybox.host.tsv"
+held="$(awk -F'\t' '$1=="secretenv"{print $2}' "$OUT/plybox.tsv")"
+if [ "$held" = "$REAL" ]; then printf 's.env\tALLOWED\tANTHROPIC_API_KEY inside is the real value\n'
+else printf 's.env\tBLOCKED\tANTHROPIC_API_KEY inside is a placeholder (%s)\n' "${held:0:28}…"; fi >> "$OUT/plybox.host.tsv"
 
 prepare host
 ( cd "$WORK" && "$PROBE" ) >"$OUT/host.tsv" 2>/dev/null || true

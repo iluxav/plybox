@@ -31,6 +31,20 @@ pub struct Policy {
     /// Environment inside the box. Values here win over the defaults.
     #[serde(default)]
     pub env: BTreeMap<String, String>,
+    /// Secrets the box must never hold: `NAME = { only = "host" }` takes the
+    /// value from the caller's environment variable NAME; add `value = "…"`
+    /// for a literal. The box gets a placeholder under NAME; the proxy swaps
+    /// it for the value only toward `only`.
+    #[serde(default)]
+    pub secrets: BTreeMap<String, SecretSpec>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SecretSpec {
+    pub only: String,
+    #[serde(default)]
+    pub value: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -67,9 +81,28 @@ pub struct Net {
     /// Empty = the box reaches nothing.
     #[serde(default)]
     pub allow: Vec<String>,
+    /// Extra PEM roots the proxy trusts when it talks to upstreams (test
+    /// servers with their own CA). Normal use needs none.
+    #[serde(default)]
+    pub trust_ca: Vec<String>,
+    /// `host=ip:port`: resolve `host` to a fixed address instead of DNS, and
+    /// skip the public-address rule for it. For test upstreams only.
+    #[serde(default)]
+    pub map: Vec<String>,
 }
 
 impl Policy {
+    /// Secrets as `NAME@HOST` / `NAME=VALUE@HOST` specs for `secrets::parse`.
+    pub fn secret_specs(&self) -> Vec<String> {
+        self.secrets
+            .iter()
+            .map(|(name, s)| match &s.value {
+                Some(v) => format!("{name}={v}@{}", s.only),
+                None => format!("{name}@{}", s.only),
+            })
+            .collect()
+    }
+
     pub fn load(path: &Path) -> Result<Policy, String> {
         let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
         toml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))
@@ -89,6 +122,9 @@ pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, Option<PathBuf
     let mut allow: Vec<String> = vec![];
     let mut ro_bind: Vec<String> = vec![];
     let mut env: BTreeMap<String, String> = BTreeMap::new();
+    let mut secrets: Vec<String> = vec![];
+    let mut trust_ca: Vec<String> = vec![];
+    let mut map: Vec<String> = vec![];
     let mut session: Option<PathBuf> = None;
     let mut quiet = false;
     let mut cmd: Vec<String> = vec![];
@@ -115,6 +151,9 @@ pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, Option<PathBuf
                     },
                 };
             }
+            "--secret" => secrets.push(need("--secret")?),
+            "--trust-ca" => trust_ca.push(need("--trust-ca")?),
+            "--map" => map.push(need("--map")?),
             "--session" => session = Some(PathBuf::from(need("--session")?)),
             "--quiet" => quiet = true,
             "--" => {
@@ -136,7 +175,17 @@ pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, Option<PathBuf
         p.fs.workspace = w;
     }
     p.net.allow.extend(allow);
+    p.net.trust_ca.extend(trust_ca);
+    p.net.map.extend(map);
     p.fs.ro_bind.extend(ro_bind);
     p.env.extend(env);
+    for spec in secrets {
+        let (lhs, host) = spec.rsplit_once('@').ok_or_else(|| format!("--secret `{spec}`: expected NAME@HOST or NAME=VALUE@HOST"))?;
+        let (name, value) = match lhs.split_once('=') {
+            Some((n, v)) => (n.to_string(), Some(v.to_string())),
+            None => (lhs.to_string(), None),
+        };
+        p.secrets.insert(name, SecretSpec { only: host.to_string(), value });
+    }
     Ok((p, cmd, session, quiet))
 }

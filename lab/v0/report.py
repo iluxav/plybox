@@ -92,6 +92,15 @@ def main():
         else:
             print("None — the binary reproduces the lab box exactly.")
 
+    hostside = load_tsv(out / "plybox.host.tsv")
+    if "s.env" in hostside or "s.leak" in hostside:
+        print("\n## Secrets\n")
+        print("| check | result | detail |")
+        print("|---|---|---|")
+        for i in ("s.env", "s.leak"):
+            verdict, detail = hostside.get(i, ("NA", "not run"))
+            print(f"| `{i}` | {CELL.get(verdict, '?')} | {detail} |")
+
     wl = load_workloads(out / "plybox.tsv")
     print("\n## Workloads under plybox\n")
     print("| workload | wanted | verdict | detail |")
@@ -122,11 +131,18 @@ def main():
     if rec.exists():
         rows = [json.loads(l) for l in rec.read_text().splitlines() if l.strip()]
         net = [r for r in rows if r.get("event") == "net"]
-        allowed = sum(1 for r in net if r.get("verdict") == "allowed")
+        allowed = [r for r in net if r.get("verdict") == "allowed"]
         refused = [r for r in net if r.get("verdict") == "refused"]
-        print(f"\n## Session record\n\n{len(rows)} events: {allowed} connections allowed, {len(refused)} refused.\n")
+        errors = [r for r in net if r.get("verdict") == "error"]
+        terminated = [r for r in allowed if r.get("mode") == "terminated"]
+        swapped = sum(r.get("secrets_substituted", 0) for r in allowed)
+        print(f"\n## Session record\n\n{len(rows)} events: {len(allowed)} connections allowed "
+              f"({len(terminated)} TLS-terminated for secrets, {swapped} substitutions), "
+              f"{len(refused)} refused, {len(errors)} errors.\n")
         for r in refused[:6]:
             print(f"- refused {r.get('host', r.get('target', '?'))}: {r.get('reason')}")
+        for r in errors[:6]:
+            print(f"- **error** {r.get('host', '?')}: {r.get('reason')}")
         still = [i for i in order if v("plybox", i) == "ALLOWED"]
         print("\n## Still open in plybox (slice 1)\n")
         print("\n".join(f"- `{i}` — {why[i]}" for i in still) if still else "Nothing measurable here.")

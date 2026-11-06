@@ -22,6 +22,7 @@ mod policy;
 mod proxy;
 mod record;
 mod seccomp;
+mod secrets;
 
 use std::process::exit;
 

@@ -25,11 +25,15 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use rustls::pki_types::ServerName;
+use rustls::{ClientConnection, ServerConnection, Stream};
 use serde_json::json;
 
 use crate::record::Record;
+use crate::secrets::{Secret, Tls};
 
-const MAX_HEAD: usize = 8 * 1024;
+const MAX_HEAD: usize = 64 * 1024;
+const MAX_BODY: usize = 64 * 1024 * 1024;
 const IO_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Default, Clone)]
@@ -144,6 +148,12 @@ pub fn is_public(ip: IpAddr) -> bool {
 pub struct Proxy {
     allow: Allow,
     record: Arc<Record>,
+    /// host → the secrets that may be substituted toward it. A host here is
+    /// TLS-terminated; every other host gets an opaque tunnel.
+    secrets: HashMap<String, Vec<Secret>>,
+    tls: Option<Arc<Tls>>,
+    /// host → fixed address (test upstreams only).
+    maps: HashMap<String, SocketAddr>,
     /// Connections being handled right now. The supervisor waits for this to
     /// reach zero (briefly) after the box exits, so the last tunnel's record
     /// line is not lost to process exit.
@@ -151,8 +161,14 @@ pub struct Proxy {
 }
 
 impl Proxy {
-    pub fn new(allow: Allow, record: Arc<Record>) -> Arc<Proxy> {
-        Arc::new(Proxy { allow, record, active: std::sync::atomic::AtomicUsize::new(0) })
+    pub fn new(
+        allow: Allow,
+        record: Arc<Record>,
+        secrets: HashMap<String, Vec<Secret>>,
+        tls: Option<Arc<Tls>>,
+        maps: HashMap<String, SocketAddr>,
+    ) -> Arc<Proxy> {
+        Arc::new(Proxy { allow, record, secrets, tls, maps, active: std::sync::atomic::AtomicUsize::new(0) })
     }
 
     /// Accept forever; one thread per connection. Runs in the supervisor.
@@ -228,10 +244,12 @@ impl Proxy {
             return self.refuse(conn, 403, "not in the allow list", json!({ "host": host, "port": port }));
         }
 
-        // Resolve to public addresses only (an IP literal was allowed by name above).
-        let addrs: Vec<SocketAddr> = match kind {
-            Kind::Ip(ip) => vec![SocketAddr::new(ip, port)],
-            Kind::Name => match (host.as_str(), port).to_socket_addrs() {
+        // Resolve: a test map, an IP literal (allowed by name above), or DNS
+        // filtered to public addresses.
+        let addrs: Vec<SocketAddr> = match (&kind, self.maps.get(&host)) {
+            (_, Some(fixed)) => vec![*fixed],
+            (Kind::Ip(ip), None) => vec![SocketAddr::new(*ip, port)],
+            (Kind::Name, None) => match (host.as_str(), port).to_socket_addrs() {
                 Ok(it) => {
                     let all: Vec<SocketAddr> = it.collect();
                     let public: Vec<SocketAddr> = all.iter().copied().filter(|a| is_public(a.ip())).collect();
@@ -261,9 +279,14 @@ impl Proxy {
         if conn.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n").is_err() {
             return;
         }
+
+        // A host that carries a secret is terminated so the placeholder can
+        // be swapped; everything else is an opaque tunnel.
+        if let (Some(tls), Some(secs), Kind::Name) = (&self.tls, self.secrets.get(&host), &kind) {
+            return self.terminate(conn, upstream, &host, port, used, secs, tls, t0);
+        }
         let _ = conn.set_read_timeout(None);
         let _ = conn.set_write_timeout(None);
-
         let (out_bytes, in_bytes) = tunnel(conn, upstream);
         self.record.event(
             "net",
@@ -274,6 +297,224 @@ impl Proxy {
             }),
         );
     }
+
+    /// TLS on both sides; one request per connection. The request is read
+    /// whole (head and body), placeholders are swapped, `Connection: close`
+    /// is forced, and the response is streamed back until the upstream
+    /// closes. Sequential by design: no threads around TLS state.
+    #[allow(clippy::too_many_arguments)]
+    fn terminate(
+        &self,
+        mut conn: UnixStream,
+        mut upstream: TcpStream,
+        host: &str,
+        port: u16,
+        used: Option<String>,
+        secs: &[Secret],
+        tls: &Tls,
+        t0: Instant,
+    ) {
+        let fail = |why: String| {
+            self.record.event("net", json!({ "verdict": "error", "mode": "terminated", "host": host, "port": port, "reason": why }));
+        };
+        let server_cfg = match tls.server_config(host) {
+            Ok(c) => c,
+            Err(e) => return fail(e),
+        };
+        let mut sconn = match ServerConnection::new(server_cfg) {
+            Ok(c) => c,
+            Err(e) => return fail(format!("tls server: {e}")),
+        };
+        let _ = conn.set_read_timeout(Some(Duration::from_secs(60)));
+        let _ = conn.set_write_timeout(Some(Duration::from_secs(60)));
+        let mut client = Stream::new(&mut sconn, &mut conn);
+
+        let (mut head, mut body) = match read_request(&mut client) {
+            Ok(x) => x,
+            Err(why) => return fail(format!("request: {why}")),
+        };
+        let mut swapped = 0usize;
+        for s in secs {
+            let (ph, val) = (s.placeholder.as_bytes(), s.value.as_bytes());
+            swapped += replace_all(&mut head, ph, val) + replace_all(&mut body, ph, val);
+        }
+        let head = rewrite_head(&head, body.len());
+
+        let name = match ServerName::try_from(host.to_string()) {
+            Ok(n) => n,
+            Err(e) => return fail(format!("server name: {e}")),
+        };
+        let mut cconn = match ClientConnection::new(tls.client_config(), name) {
+            Ok(c) => c,
+            Err(e) => return fail(format!("tls client: {e}")),
+        };
+        let _ = upstream.set_read_timeout(Some(Duration::from_secs(120)));
+        let _ = upstream.set_write_timeout(Some(Duration::from_secs(60)));
+        let mut up = Stream::new(&mut cconn, &mut upstream);
+        if let Err(e) = up.write_all(&head).and_then(|_| up.write_all(&body)).and_then(|_| up.flush()) {
+            return fail(format!("upstream write: {e}"));
+        }
+
+        let mut in_bytes = 0u64;
+        let mut buf = [0u8; 16384];
+        loop {
+            match up.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    in_bytes += n as u64;
+                    if client.write_all(&buf[..n]).is_err() {
+                        break;
+                    }
+                }
+                Err(_) => break, // EOF without close_notify, timeout: the response is over
+            }
+        }
+        let _ = client.flush();
+        client.conn.send_close_notify();
+        let _ = client.flush();
+
+        self.record.event(
+            "net",
+            json!({
+                "verdict": "allowed", "mode": "terminated", "host": host, "port": port, "addr": used,
+                "secrets_substituted": swapped,
+                "bytes_out": (head.len() + body.len()) as u64, "bytes_in": in_bytes,
+                "ms": t0.elapsed().as_millis() as u64,
+            }),
+        );
+    }
+}
+
+/// Read one HTTP/1.x request: the head (through the blank line) and the
+/// body (Content-Length or chunked, decoded). Bounded.
+fn read_request<R: Read>(r: &mut R) -> Result<(Vec<u8>, Vec<u8>), String> {
+    let mut buf: Vec<u8> = Vec::with_capacity(4096);
+    let mut chunk = [0u8; 16384];
+    let head_end = loop {
+        if let Some(i) = find(&buf, b"\r\n\r\n") {
+            break i + 4;
+        }
+        if buf.len() > MAX_HEAD {
+            return Err("head too long".into());
+        }
+        match r.read(&mut chunk) {
+            Ok(0) => return Err("closed before the head ended".into()),
+            Ok(n) => buf.extend_from_slice(&chunk[..n]),
+            Err(e) => return Err(format!("read: {e}")),
+        }
+    };
+    let head = buf[..head_end].to_vec();
+    let mut rest = buf[head_end..].to_vec();
+    let lower = String::from_utf8_lossy(&head).to_ascii_lowercase();
+    let content_length = header_value(&lower, "content-length").and_then(|v| v.trim().parse::<usize>().ok());
+    let chunked = header_value(&lower, "transfer-encoding").is_some_and(|v| v.contains("chunked"));
+
+    let mut need = |rest: &mut Vec<u8>, n: usize| -> Result<(), String> {
+        while rest.len() < n {
+            if n > MAX_BODY {
+                return Err("body too large".into());
+            }
+            match r.read(&mut chunk) {
+                Ok(0) => return Err("closed inside the body".into()),
+                Ok(k) => rest.extend_from_slice(&chunk[..k]),
+                Err(e) => return Err(format!("read body: {e}")),
+            }
+        }
+        Ok(())
+    };
+
+    if let Some(n) = content_length {
+        need(&mut rest, n)?;
+        rest.truncate(n);
+        return Ok((head, rest));
+    }
+    if chunked {
+        let mut body = Vec::new();
+        loop {
+            // chunk-size line
+            let line_end = loop {
+                if let Some(i) = find(&rest, b"\r\n") {
+                    break i;
+                }
+                let want = rest.len() + 1;
+                need(&mut rest, want)?;
+            };
+            let size_text = String::from_utf8_lossy(&rest[..line_end]).trim().split(';').next().unwrap_or("").to_string();
+            let size = usize::from_str_radix(&size_text, 16).map_err(|_| "bad chunk size".to_string())?;
+            rest.drain(..line_end + 2);
+            if size == 0 {
+                // trailers until blank line (usually just CRLF)
+                loop {
+                    if rest.starts_with(b"\r\n") {
+                        break;
+                    }
+                    if let Some(i) = find(&rest, b"\r\n") {
+                        rest.drain(..i + 2);
+                        continue;
+                    }
+                    let want = rest.len() + 1;
+                    need(&mut rest, want)?;
+                }
+                break;
+            }
+            if body.len() + size > MAX_BODY {
+                return Err("body too large".into());
+            }
+            need(&mut rest, size + 2)?;
+            body.extend_from_slice(&rest[..size]);
+            rest.drain(..size + 2);
+        }
+        return Ok((head, body));
+    }
+    Ok((head, Vec::new()))
+}
+
+fn header_value(lower_head: &str, name: &str) -> Option<String> {
+    lower_head.lines().find_map(|l| l.strip_prefix(&format!("{name}:")).map(|v| v.trim().to_string()))
+}
+
+/// One request per connection, body length made explicit: drop keep-alive,
+/// transfer-encoding and any client content-length; add ours.
+fn rewrite_head(head: &[u8], body_len: usize) -> Vec<u8> {
+    let text = String::from_utf8_lossy(head);
+    let mut out: Vec<String> = vec![];
+    let mut had_body_header = false;
+    for (i, line) in text.trim_end_matches("\r\n").split("\r\n").enumerate() {
+        let l = line.to_ascii_lowercase();
+        if i > 0 && (l.starts_with("connection:") || l.starts_with("proxy-connection:")) {
+            continue;
+        }
+        if i > 0 && (l.starts_with("content-length:") || l.starts_with("transfer-encoding:")) {
+            had_body_header = true;
+            continue;
+        }
+        out.push(line.to_string());
+    }
+    out.push("Connection: close".into());
+    if body_len > 0 || had_body_header {
+        out.push(format!("Content-Length: {body_len}"));
+    }
+    (out.join("\r\n") + "\r\n\r\n").into_bytes()
+}
+
+fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
+    hay.windows(needle.len()).position(|w| w == needle)
+}
+
+/// Replace every occurrence in place; returns the count.
+fn replace_all(buf: &mut Vec<u8>, from: &[u8], to: &[u8]) -> usize {
+    if from.is_empty() {
+        return 0;
+    }
+    let mut count = 0;
+    let mut i = 0;
+    while let Some(p) = find(&buf[i..], from) {
+        let at = i + p;
+        buf.splice(at..at + from.len(), to.iter().copied());
+        i = at + to.len();
+        count += 1;
+    }
+    count
 }
 
 fn merge(into: &mut serde_json::Value, extra: serde_json::Value) {
