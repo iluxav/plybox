@@ -1,3 +1,6 @@
 target/
 lab/.run.*/
 lab/results/
+# third-party binaries: tools/fetch.sh downloads and verifies them
+lab/tools/*
+!lab/tools/fetch.sh

@@ -13,7 +13,10 @@ set -u
 PROBE="$1"
 
 # --- attack probes (same binary as step 1) ---
-"$PROBE" | sed 's/^/probe\t/'
+# PROBE_LAST=1 runs them after the workloads: under gVisor a memory-limit
+# kill takes the whole sandbox down, so the probe must go last there.
+run_probe() { "$PROBE" | sed 's/^/probe\t/'; }
+[ "${PROBE_LAST:-}" = 1 ] || run_probe
 
 # --- workloads: does a normal tool reach an allowed host through the proxy? ---
 # want = the outcome that means the box behaves correctly: "ok" (command
@@ -73,3 +76,7 @@ if [ -n "${SECRET_TEST_HOST:-}" ]; then
       .then(t => { process.stdout.write(t); process.exit(t.includes("key=ok") ? 0 : 1); })
       .catch(e => { console.error(String(e)); process.exit(1); });'
 fi
+
+# Under gVisor the probe runs last (see PROBE_LAST above).
+[ "${PROBE_LAST:-}" = 1 ] && run_probe
+exit 0

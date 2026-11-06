@@ -77,10 +77,63 @@ gives no signal on this machine; the matrix marks those with `*`.
      a 1 GiB allocation was OOM-killed at the limit while the box carried on.
      (`OOMPolicy=stop`, systemd's default, killed the entire box on the
      first run — a design fact worth remembering.)
-5. Second kernel: the same probes under gVisor and KVM, with start time and
-   overhead measured.
+5. Second kernel. **Done** — `gv/run.sh` (gVisor) and `vm/run.sh`
+   (Firecracker); binaries via `tools/fetch.sh`. No root for either:
+   gVisor runs `--rootless`, Firecracker uses the world-readable `/dev/kvm`.
 
-## Known limits (updated after step 4)
+   **Start latency** (median of 10, spawn → `/bin/true` exits): host 0 ms,
+   namespaces 1 ms, namespaces + boxer 2 ms, gVisor 12 ms, Firecracker
+   544 ms to init / 726 ms boot+probe+exit (untuned 6.1 CI kernel).
+
+   **gVisor** (`gv.box` = gVisor + proxy + boxer + limits): all 4 workloads
+   pass; a TLS fetch costs the same (206 vs 205 ms), npm +34 % (415 vs
+   309 ms), tiny operations ~10 ms slower each. Of the 8 kernel doors our
+   seccomp allowlist had to close, gVisor's user-space kernel closes 6 by
+   simply not implementing them (io_uring, userfaultfd, perf, netfilter
+   socket, AF_ALG/AF_VSOCK, keyrings); boxer's seccomp still applies inside
+   and closes the rest; Landlock does not exist there (boxer reports
+   `NotEnforced`). Read the `gv` column with care: an OPEN door inside
+   gVisor (mount, mknod, nested userns, ptrace) leads into the *sentry*, a
+   user-space program, not into the host kernel — the probe cannot tell the
+   two apart. What is real: `runsc do` exposes the host filesystem
+   read-only and, with `--host-uds=all` (needed for the proxy socket),
+   every host unix socket incl. the session bus — so `f.secrets` and
+   `f.ipc.dbus` read OPEN. That is `do`'s convenience mount policy, not a
+   gVisor weakness; a real integration hands runsc an OCI bundle with the
+   same mounts as the bwrap box and `--host-uds=open` on one socket.
+   Resources: the memory limit bit (OOM kill — of the whole sandbox, since
+   the sentry is one host process); `TasksMax` did not stop a 2000-process
+   fork inside, because guest processes are not host tasks. The host is
+   protected by construction there, but this lab did not measure the
+   sentry's own host-thread count.
+
+   **Firecracker**: boots and runs all 41 probes from a 64 MiB ext4 built
+   without root (`mkfs.ext4 -d`) and a 40-line PID 1 (`vm/init`). The
+   `vm (guest view)` column shows the guest kernel wide open — the probe ran
+   as root in a plain Linux. That is the correct reading: a VM protects the
+   *host*; it does nothing for what runs *inside* unless the same box layers
+   are rebuilt there. No network without root (tap devices), so the proxy
+   path is untested in the VM; vsock plumbing would be the next experiment.
+
+   **What works best:** for *your agent with hostile inputs*, the
+   namespaces box (step 4): 0 doors, 2 ms, every tool works. gVisor is the
+   right second tier when the code itself is untrusted and KVM is absent:
+   rootless, 12 ms, a genuine second kernel, modest slowdown, needs the same
+   mount policy. Firecracker is the strongest wall at ~0.5 s and needs KVM,
+   and still wants a box inside.
+
+## Known limits (updated after step 5)
+
+- **The probe cannot see the boundary it sits behind.** Inside gVisor or a
+  VM, "OPEN" means the emulated or guest kernel allowed it, not the host.
+  Cross-tier comparisons of the kernel class need that caveat every time.
+- **gVisor's `do` mode is not the integration.** Host filesystem read-only,
+  all unix sockets with `--host-uds=all`, root with capabilities inside:
+  all defaults of the convenience command, all fixable with an OCI bundle.
+- **`f.write.*` is an inside view.** Under gVisor's overlay the write
+  succeeds inside and never reaches the host (verified by hand); the probe
+  needs a host-side check like the one `f.inject.*` already has.
+- **Firecracker here has no network and no in-guest box.**
 
 - **Secret substitution is deliberately narrow.** It rewrites the request
   head only, forces one request per connection (`Connection: close`),
