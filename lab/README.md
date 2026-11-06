@@ -1,0 +1,59 @@
+# plybox lab
+
+Facts before design. Every security claim plybox makes starts here as a
+probe: a small, harmless attempt at one step an attacker inside a sandbox
+would take. The lab runs every probe under every sandbox config and prints
+which steps worked.
+
+```sh
+./run.sh                # all configs, no root needed
+./run.sh host tight     # only these
+```
+
+Results land in `results/<timestamp>/`: one `.tsv` per config and
+`matrix.md`.
+
+## Reading a result
+
+- **OPEN** — the attacker step worked.
+- **closed** — it failed.
+- **n/a** — this run cannot tell.
+
+`host` (no sandbox) is the control. A probe that is not OPEN on the host
+gives no signal on this machine; the matrix marks those with `*`.
+
+## Adding things
+
+- **A probe:** one function and one line in `PROBES` in
+  `probe/src/main.rs`. It must be harmless, print no secret contents, and
+  remove what it creates.
+- **A config:** a `config_<name>` function in `run.sh`, plus its name in
+  `ALL`.
+
+## Steps
+
+1. Baseline: the attack suite against existing setups. **Done** — `run.sh`.
+   On this machine, full namespaces alone leave 11 of 41 doors open (8 of
+   them kernel entry points), and a shared network reopens all 5 network
+   doors.
+2. Network: a loopback-only box with a proxy outside it, no root. **Done** —
+   `net/run.sh`. Result: 0 of 7 network doors open inside the box (public
+   TCP, attacker DNS, system DNS, host loopback, host LAN all closed), while
+   curl to an allow-listed host, npm to its registry, and a refused denied
+   host all behave correctly. The proxy decides by hostname before it
+   connects, and logs every allow/refuse (`proxy.jsonl`) — the audit trail.
+   No root was used.
+3. Kernel surface: syscall allowlist and Landlock. The 8 kernel doors still
+   open after step 1 are the target (io_uring, userfaultfd, perf, netfilter
+   socket, AF_ALG, AF_VSOCK, ptrace, keyrings), plus the missing seccomp
+   filter.
+4. Files and secrets: workspace overlay (changes land on the host only on
+   apply), secrets added at the proxy so they never enter the box. Targets:
+   `f.inject.githook`, `f.inject.agentcfg`, and keeping credential files
+   unreadable.
+5. Second kernel: the same probes under gVisor and KVM, with start time and
+   overhead measured.
+
+Known lab gaps: 13 of 41 probes give no signal on this machine (IPv6, cloud
+metadata, anything needing root); resource limits (`q.*`) are not yet
+enforced by any config here.
