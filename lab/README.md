@@ -203,3 +203,11 @@ schema (`allowedDomains`, `allowWrite`, `denyRead`) as an input format
 people already know.
 
 Not compared: Docker Sandboxes (needs KVM and a Docker account) and nono.
+
+## The binary (`v0/run.sh`)
+
+Runs the real `plybox` against the same 41 probes and workloads and diffs it
+against the lab's proven bwrap+boxer box. Slice 1 (2026-11-06): identical on
+every measurable door, 0 kernel / 0 process / 0 network doors, 2 ms start;
+still open: the two planted-file probes and the two resource probes — the
+targets of slices 2–3.
