@@ -196,17 +196,41 @@ fn sock(domain: i32, ty: i32, proto: i32, what: &str) -> R {
     open_or_block(fd as libc::c_long, what)
 }
 
-fn tcp(addr: &str, secs: u64) -> std::io::Result<()> {
-    let a: SocketAddr = addr
-        .parse()
-        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "bad address"))?;
-    TcpStream::connect_timeout(&a, Duration::from_secs(secs)).map(|_| ())
+enum Reach {
+    Replied(usize),
+    Silent(String),
+    NoConnect(std::io::Error),
+}
+
+/// Connect, send a harmless request, and wait for ANY bytes back. A bare
+/// connect() is not evidence: inside a TUN-based sandbox the TUN device
+/// completes the TCP handshake before any policy runs, so connect succeeds
+/// and only the data path is refused. A reply proves the peer was reached.
+fn reach(addr: &str) -> Reach {
+    use std::io::Write;
+    let a: SocketAddr = match addr.parse() {
+        Ok(a) => a,
+        Err(_) => return Reach::NoConnect(std::io::Error::new(std::io::ErrorKind::InvalidInput, "bad address")),
+    };
+    let mut s = match TcpStream::connect_timeout(&a, Duration::from_secs(3)) {
+        Ok(s) => s,
+        Err(e) => return Reach::NoConnect(e),
+    };
+    let _ = s.set_read_timeout(Some(Duration::from_secs(3)));
+    let _ = s.write_all(b"GET / HTTP/1.0\r\nHost: plybox-probe\r\n\r\n");
+    let mut buf = [0u8; 64];
+    match s.read(&mut buf) {
+        Ok(n) if n > 0 => Reach::Replied(n),
+        Ok(_) => Reach::Silent("peer closed without a reply".into()),
+        Err(e) => Reach::Silent(format!("no reply: {e}")),
+    }
 }
 
 fn tcp_probe(addr: &str, what: &str) -> R {
-    match tcp(addr, 3) {
-        Ok(()) => (Allowed, format!("connected to {what} ({addr})")),
-        Err(e) => (Blocked, format!("{addr}: {e}")),
+    match reach(addr) {
+        Reach::Replied(n) => (Allowed, format!("reached {what} ({addr}): {n} bytes back")),
+        Reach::Silent(why) => (Blocked, format!("{addr}: connected but {why} (a proxy sink refusing the data path)")),
+        Reach::NoConnect(e) => (Blocked, format!("{addr}: {e}")),
     }
 }
 
@@ -669,12 +693,14 @@ fn f_ipc_agent() -> R {
 
 // ------------------------------------------------------------ network
 
+// Port 80: a plain HTTP request gets a real reply (a redirect), which is the
+// evidence `reach` needs; on 443 the server would only answer a TLS hello.
 fn n_tcp_public() -> R {
-    tcp_probe("1.1.1.1:443", "a public address")
+    tcp_probe("1.1.1.1:80", "a public address")
 }
 
 fn n_tcp_v6() -> R {
-    tcp_probe("[2606:4700:4700::1111]:443", "a public IPv6 address")
+    tcp_probe("[2606:4700:4700::1111]:80", "a public IPv6 address")
 }
 
 fn n_dns_direct() -> R {
@@ -715,9 +741,10 @@ fn n_host_lan() -> R {
 }
 
 fn n_metadata() -> R {
-    match tcp("169.254.169.254:80", 2) {
-        Ok(()) => (Allowed, "connected to 169.254.169.254:80".into()),
-        Err(e) => match e.raw_os_error() {
+    match reach("169.254.169.254:80") {
+        Reach::Replied(n) => (Allowed, format!("169.254.169.254:80 answered ({n} bytes)")),
+        Reach::Silent(why) => (Blocked, format!("169.254.169.254:80: connected but {why}")),
+        Reach::NoConnect(e) => match e.raw_os_error() {
             Some(libc::ENETUNREACH) | Some(libc::EPERM) | Some(libc::EACCES) => (Blocked, e.to_string()),
             _ => (Na, format!("no metadata service answers here ({e})")),
         },

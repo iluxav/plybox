@@ -37,8 +37,8 @@ RUNSC="$LAB/tools/runsc"
 
 LO_PORT=47851; LAN_PORT=47852
 LAN_IP="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p')"
-socat -u TCP-LISTEN:$LO_PORT,bind=127.0.0.1,fork,reuseaddr OPEN:/dev/null & PIDS+=($!)
-[ -n "$LAN_IP" ] && { socat -u TCP-LISTEN:$LAN_PORT,bind="$LAN_IP",fork,reuseaddr OPEN:/dev/null & PIDS+=($!); }
+socat TCP-LISTEN:$LO_PORT,bind=127.0.0.1,fork,reuseaddr SYSTEM:'echo plybox-host' & PIDS+=($!)
+[ -n "$LAN_IP" ] && { socat TCP-LISTEN:$LAN_PORT,bind="$LAN_IP",fork,reuseaddr SYSTEM:'echo plybox-host' & PIDS+=($!); }
 export PROBE_HOST_LO="127.0.0.1:$LO_PORT"
 export PROBE_HOST_LAN="${LAN_IP:+$LAN_IP:$LAN_PORT}"
 export PROBE_HOST_HOME="$HOME"

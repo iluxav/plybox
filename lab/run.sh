@@ -25,9 +25,9 @@ cp "$LAB/probe/target/$TARGET/release/probe" "$RUN/probe"
 LO_PORT=47801
 LAN_PORT=47802
 LAN_IP="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p')"
-socat -u TCP-LISTEN:$LO_PORT,bind=127.0.0.1,fork,reuseaddr OPEN:/dev/null &
+socat TCP-LISTEN:$LO_PORT,bind=127.0.0.1,fork,reuseaddr SYSTEM:'echo plybox-host' &
 if [ -n "$LAN_IP" ]; then
-  socat -u TCP-LISTEN:$LAN_PORT,bind="$LAN_IP",fork,reuseaddr OPEN:/dev/null &
+  socat TCP-LISTEN:$LAN_PORT,bind="$LAN_IP",fork,reuseaddr SYSTEM:'echo plybox-host' &
 fi
 sleep 0.3
 

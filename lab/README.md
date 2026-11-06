@@ -161,3 +161,45 @@ gives no signal on this machine; the matrix marks those with `*`.
   boxer). Real plybox should confine or replace it.
 - 13 of 41 probes give no signal on this machine (IPv6, cloud metadata,
   anything needing root).
+
+## Comparison with other sandboxes (`compare/run.sh`)
+
+Same 41 doors, same workloads, each tool with its own defaults plus the same
+allow list (api.anthropic.com, *.anthropic.com, registry.npmjs.org).
+Binaries pinned in `tools/fetch.sh`: Anthropic sandbox-runtime 0.0.81,
+Greywall 0.3.7 + greyproxy 0.4.5. One machine, one day; not an audit.
+
+| | host | ours (box.full) | ours (gv.box) | srt | greywall |
+|---|---:|---:|---:|---:|---:|
+| open doors of 41 | 28 | **0** | 7 | 10 | 12 |
+| start latency (median) | 0 ms | 2 ms | 12 ms | 91 ms | 1248 ms |
+| workloads correct | — | 4/4 | 4/4 | 4/4 | 4/4 (each ~2 s) |
+
+- **srt** closes the network completely (it removes the network namespace,
+  as we do) and keeps planted files off the host, but reads the host home
+  by default (`.ssh`, Claude credentials, shell history), leaves 6 kernel
+  doors open (userfaultfd, perf, netfilter socket, AF_ALG, ptrace,
+  keyrings — its seccomp filter targets unix sockets and nested userns, not
+  the kernel surface), and has no resource limits.
+- **Greywall** denies credential files and git hooks by default (good
+  mandatory rules) and has a learning mode, but routes traffic through a
+  TUN device: 1.2 s per start, the agent keeps CAP_NET_ADMIN inside, nested
+  user namespaces and io_uring stay open, its DNS proxy resolves arbitrary
+  names (data can leave inside names), the agent-settings file landed on the
+  host, a session-bus socket was reachable (possibly its xdg-dbus-proxy —
+  unverified), and no resource limits.
+- **Ours** closes everything measurable at 2 ms, because three things the
+  others lack are first-class: a syscall allowlist, a workspace that is a
+  copy by construction, and cgroup limits.
+
+**A probe fix the comparison forced.** A bare `connect()` always succeeds
+behind a TUN device (the device completes the handshake before any policy
+runs), so `n.tcp.*` and `n.host.*` now require a reply, and the host
+stand-in listeners answer. Fairer to every tool, ours included.
+
+**What the build should borrow:** Greywall's mandatory denies and learning
+mode (audit → profile → enforce; ply had this for egress); srt's settings
+schema (`allowedDomains`, `allowWrite`, `denyRead`) as an input format
+people already know.
+
+Not compared: Docker Sandboxes (needs KVM and a Docker account) and nono.
