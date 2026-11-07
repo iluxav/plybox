@@ -66,6 +66,18 @@ grep -q 'symlink → ' "$T/patch.txt" && ! grep -q 'CANARY' "$T/patch.txt"
 check "diff --patch names a symlink, never reads its target" $? "$(grep 'symlink' "$T/patch.txt" | head -1 | cut -c1-60)"
 "$PLYBOX" discard "$SP" >/dev/null 2>&1
 
+# --- 1d. session paths longer than a unix socket address (107 bytes) --------
+# A bounded --disk volume or a CI checkout easily nests that deep; the proxy
+# socket inside the session must still bind, serve and shut down promptly.
+WL="$T/wsl"; mkdir -p "$WL"
+SL="$T/$(printf 'v%.0s' $(seq 1 90))/long-session"; mkdir -p "$(dirname "$SL")"
+s=$(date +%s%N)
+"$PLYBOX" run --quiet --session "$SL" --work "$WL" -- sh -c 'echo long > long.txt' >"$T/long.out" 2>&1; code=$?
+ms=$(( ($(date +%s%N) - s) / 1000000 ))
+[ $code -eq 0 ] && [ -f "$SL/upper/long.txt" ] && [ $ms -lt 1500 ]
+check "session path over the socket limit still runs" $? "socket path $(( ${#SL} + 16 )) bytes, ${ms} ms, exit $code $(head -c 80 "$T/long.out")"
+"$PLYBOX" discard "$SL" >/dev/null 2>&1
+
 # --- 2. apply never writes through a symlink that leaves the workspace ------
 W2="$T/ws2"; OUT="$T/outside"; mkdir -p "$W2" "$OUT"; echo original > "$OUT/target.txt"
 ln -s "$OUT/target.txt" "$W2/cfg"

@@ -171,7 +171,9 @@ fn run_box(
     }
     let sock = session.join("sock/proxy.sock");
     let _ = std::fs::remove_file(&sock);
-    let listener = UnixListener::bind(&sock).map_err(|e| format!("proxy socket {}: {e}", sock.display()))?;
+    // Held until run_box returns: a socket bound through /proc/self/fd is
+    // reachable by that name only while this fd stays open (drain uses it).
+    let (listener, _sock_dir) = bind_proxy_socket(&session.join("sock"), &sock)?;
     {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(&sock, std::fs::Permissions::from_mode(0o777));
@@ -498,6 +500,41 @@ fn bwrap_argv(
 /// so they live under the state directory, not the runtime one.
 fn default_session() -> Result<PathBuf, String> {
     workspace::new_session_dir()
+}
+
+/// Longest path a unix socket address holds: sun_path is 108 bytes,
+/// including the terminating NUL.
+const SUN_PATH_MAX: usize = 107;
+
+/// Bind the proxy's listener at `sock` (inside `dir`). A unix socket address
+/// holds at most 107 bytes, and session paths can be longer — a bounded
+/// `--disk` volume under /srv/volumes/<tenant>/…, a CI checkout, a long
+/// XDG_STATE_HOME. Then bind through `/proc/self/fd/<dir>/proxy.sock`
+/// instead: the kernel resolves the directory by fd, so the socket inode is
+/// created at the same real path, which is what the box's bind mount shows.
+/// Short paths bind directly, as before. Returns the directory fd, which
+/// must stay open for as long as the fd-relative name is used.
+fn bind_proxy_socket(dir: &Path, sock: &Path) -> Result<(UnixListener, Option<std::fs::File>), String> {
+    let name = sock.file_name().ok_or("proxy socket has no file name")?;
+    if sock.as_os_str().len() <= SUN_PATH_MAX {
+        let l = UnixListener::bind(sock).map_err(|e| format!("proxy socket {}: {e}", sock.display()))?;
+        return Ok((l, None));
+    }
+    use std::os::unix::fs::OpenOptionsExt;
+    use std::os::fd::AsRawFd;
+    // O_PATH: a handle on the directory itself, nothing readable; std adds
+    // O_CLOEXEC, so it never leaks into the box.
+    let d = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_PATH | libc::O_DIRECTORY)
+        .open(dir)
+        .map_err(|e| format!("proxy socket dir {}: {e}", dir.display()))?;
+    let short = Path::new("/proc/self/fd").join(d.as_raw_fd().to_string()).join(name);
+    let l = UnixListener::bind(&short).map_err(|e| {
+        format!("proxy socket {} ({} bytes, over the 107-byte unix socket limit; bound via {}): {e}",
+            sock.display(), sock.as_os_str().len(), short.display())
+    })?;
+    Ok((l, Some(d)))
 }
 
 /// `--tmpfs` and `--disk` size the box's scratch mounts with bwrap's `--size`,
