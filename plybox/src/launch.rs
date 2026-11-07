@@ -72,6 +72,7 @@ pub fn run(pol: Policy, cmd: Vec<String>, opts: RunOpts) -> Result<i32, String> 
             "workspace": work, "workspace_mode": pol.fs.workspace_mode, "cmd": cmd,
             "image": image.as_ref().map(|i| json!({ "ref": i.meta.reference, "digest": i.meta.digest })),
             "started": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
+            "started_ns": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0),
         }))
         .unwrap(),
     )
@@ -144,7 +145,7 @@ pub fn run(pol: Policy, cmd: Vec<String>, opts: RunOpts) -> Result<i32, String> 
     );
     if !quiet {
         eprintln!(
-            "plybox: box up ({}{}) — network: {}; secrets: {}; workspace {} at /work ({}); limits: {}; record {}",
+            "plybox: box up ({}{}) — network: {}; secrets: {}; workspace {} at /work ({}); limits: {}; session {}",
             pol.isolation,
             image.as_ref().map(|i| format!(", image {}", i.meta.reference)).unwrap_or_default(),
             if pol.net.allow.is_empty() { "none".to_string() } else { pol.net.allow.join(", ") },
@@ -152,7 +153,7 @@ pub fn run(pol: Policy, cmd: Vec<String>, opts: RunOpts) -> Result<i32, String> 
             work.display(),
             pol.fs.workspace_mode,
             enforcer.describe(),
-            session.join("record.jsonl").display()
+            workspace::session_name(&session)
         );
     }
     if !enforcer.limits.is_empty() && matches!(enforcer.mode, limits::Mode::None) {
@@ -224,8 +225,8 @@ pub fn run(pol: Policy, cmd: Vec<String>, opts: RunOpts) -> Result<i32, String> 
     }
     if !quiet && overlay && !gvisor_tier {
         eprintln!(
-            "plybox: box exited {code}; {changed} workspace change(s) held in the session — `plybox diff {0}` / `plybox apply {0}`",
-            session.display()
+            "plybox: box exited {code}; {changed} workspace change(s) held in session {0} — `plybox diff {0}` / `plybox apply {0}`",
+            workspace::session_name(&session)
         );
     }
     Ok(code)
@@ -407,12 +408,7 @@ fn bwrap_argv(
 /// Sessions persist (they hold the record and the workspace's upper layer),
 /// so they live under the state directory, not the runtime one.
 fn default_session() -> Result<PathBuf, String> {
-    let id = format!(
-        "{}-{}",
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
-        std::process::id()
-    );
-    Ok(workspace::sessions_base().join(id))
+    workspace::new_session_dir()
 }
 
 fn which(name: &str) -> Option<PathBuf> {

@@ -96,7 +96,7 @@ fn main() {
                     let age = workspace::now().saturating_sub(i.meta.last_started.max(i.meta.started));
                     let age = if age < 3600 { format!("{}m", age / 60) } else if age < 86400 { format!("{}h", age / 3600) } else { format!("{}d", age / 86400) };
                     let cmd: String = i.meta.cmd.join(" ").chars().take(48).collect();
-                    println!("{:<22} {:>4} ago  {:<14} {}  — {}", i.id, age, i.status(), i.meta.workspace.display(), cmd);
+                    println!("{:<18} {:>4} ago  {:<12} {}  — {}", i.id, age, i.status(), i.meta.workspace.display(), cmd);
                 }
                 let pending = all.iter().filter(|i| i.pending()).count();
                 if pending > 0 {
@@ -107,7 +107,7 @@ fn main() {
         Some("discard") => {
             let target = args.get(1).map(String::as_str).unwrap_or("--last");
             match workspace::resolve(target).and_then(|dir| workspace::discard(&dir).map(|_| dir)) {
-                Ok(dir) => println!("discarded {}", dir.display()),
+                Ok(dir) => println!("discarded session {}", workspace::session_name(&dir)),
                 Err(e) => {
                     eprintln!("plybox: {e}");
                     exit(1)
@@ -121,12 +121,16 @@ fn main() {
                 eprintln!("plybox: {e}");
                 exit(1)
             });
+            let name = workspace::session_name(&session.dir);
+            if name != target {
+                eprintln!("plybox: session {name}");
+            }
             let result = if which == "diff" { session.changes() } else { session.apply() };
             match result {
                 Ok(changes) => {
                     workspace::print_changes(&changes);
                     if which == "apply" {
-                        eprintln!("plybox: applied {} change(s) to {}", changes.len(), session.workspace.display());
+                        eprintln!("plybox: applied {} change(s) from session {} to {}", changes.len(), name, session.workspace.display());
                     }
                 }
                 Err(e) => {

@@ -47,6 +47,9 @@ pub struct Meta {
     pub cmd: Vec<String>,
     /// First start, unix seconds.
     pub started: u64,
+    /// The same, in nanoseconds: orders sessions started within one second.
+    #[serde(default)]
+    pub started_ns: u64,
     #[serde(default)]
     pub last_started: u64,
     #[serde(default)]
@@ -82,19 +85,91 @@ pub fn write_meta(dir: &Path, meta: &Meta) -> Result<(), String> {
     std::fs::rename(&tmp, dir.join("meta.json")).map_err(|e| format!("meta.json: {e}"))
 }
 
-/// `--last` (the newest session), a session id, or a session directory.
+// ------------------------------------------------------------ session names
+
+/// Session names are two words, `quiet-heron`: easy to read back, say and
+/// type, and any unique prefix of 3+ characters selects one.
+const ADJECTIVES: &[&str] = &[
+    "amber", "brave", "brisk", "calm", "clever", "cosmic", "crisp", "dusty", "eager", "early", "fancy", "gentle",
+    "glad", "golden", "happy", "hidden", "humble", "icy", "jolly", "kind", "lively", "lucky", "mellow", "misty",
+    "noble", "plain", "polite", "proud", "quick", "quiet", "rapid", "rosy", "rusty", "shiny", "silent", "silver",
+    "sleepy", "snowy", "solar", "steady", "sunny", "swift", "tidy", "vivid", "warm", "wild", "witty", "zesty",
+];
+const NOUNS: &[&str] = &[
+    "badger", "beaver", "bison", "comet", "coral", "crane", "dingo", "eagle", "ember", "falcon", "fern", "finch",
+    "fox", "gecko", "hawk", "heron", "ibis", "koala", "lark", "lemur", "lynx", "maple", "mole", "moose",
+    "newt", "oak", "orca", "otter", "owl", "panda", "pebble", "pine", "quail", "raven", "robin", "salmon",
+    "seal", "sparrow", "stork", "tiger", "toad", "trout", "tulip", "walrus", "willow", "wren", "yak", "zebra",
+];
+
+fn random_u32() -> u32 {
+    let mut b = [0u8; 4];
+    let r = unsafe { libc::getrandom(b.as_mut_ptr() as *mut libc::c_void, b.len(), 0) };
+    if r != b.len() as isize {
+        let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(0);
+        return t ^ std::process::id().rotate_left(16);
+    }
+    u32::from_le_bytes(b)
+}
+
+/// Create and return a new session directory with a free name. The name is
+/// claimed with a plain `mkdir`, which fails if it exists — so two runs
+/// starting at the same moment can never end up sharing one session.
+pub fn new_session_dir() -> Result<PathBuf, String> {
+    let base = sessions_base();
+    std::fs::create_dir_all(&base).map_err(|e| format!("{}: {e}", base.display()))?;
+    for attempt in 0..200u32 {
+        let r = random_u32();
+        let mut name = format!("{}-{}", ADJECTIVES[(r & 0xffff) as usize % ADJECTIVES.len()], NOUNS[(r >> 16) as usize % NOUNS.len()]);
+        if attempt >= 40 {
+            name.push_str(&format!("-{}", 2 + attempt % 98)); // the words are running out: add a number
+        }
+        let dir = base.join(&name);
+        match std::fs::create_dir(&dir) {
+            Ok(()) => return Ok(dir),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(format!("{}: {e}", dir.display())),
+        }
+    }
+    Err("could not find a free session name — `plybox sessions --prune` clears old ones".into())
+}
+
+/// The session's name: the last component of its directory.
+pub fn session_name(dir: &Path) -> String {
+    dir.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
+}
+
+/// `--last` (the most recently started session), a name, a unique prefix of
+/// a name (3+ characters), or a session directory.
 pub fn resolve(arg: &str) -> Result<PathBuf, String> {
     if arg == "--last" {
-        let mut dirs = session_dirs();
-        dirs.sort();
-        return dirs.pop().ok_or_else(|| "no sessions yet".into());
+        return list()
+            .into_iter()
+            .max_by_key(|i| i.order())
+            .map(|i| i.dir)
+            .ok_or_else(|| "no sessions yet".into());
     }
     let p = PathBuf::from(arg);
-    let dir = if p.join("meta.json").is_file() { p } else { sessions_base().join(arg) };
-    if !dir.join("meta.json").is_file() {
-        return Err(format!("no session `{arg}` (see `plybox sessions`)"));
+    if p.join("meta.json").is_file() {
+        return Ok(p);
     }
-    Ok(dir)
+    let exact = sessions_base().join(arg);
+    if !arg.contains('/') && exact.join("meta.json").is_file() {
+        return Ok(exact);
+    }
+    if arg.len() >= 3 && !arg.contains('/') {
+        let mut hits: Vec<PathBuf> = session_dirs().into_iter().filter(|d| session_name(d).starts_with(arg)).collect();
+        hits.sort();
+        match hits.len() {
+            1 => return Ok(hits.remove(0)),
+            0 => {}
+            _ => {
+                let names: Vec<String> = hits.iter().map(|d| session_name(d)).collect();
+                return Err(format!("`{arg}` matches {} sessions: {} — type more of the name", names.len(), names.join(", ")));
+            }
+        }
+    }
+    Err(format!("no session `{arg}` (see `plybox sessions`)"))
 }
 
 fn session_dirs() -> Vec<PathBuf> {
@@ -142,6 +217,19 @@ pub struct Info {
     pub meta: Meta,
     pub changes: usize,
     pub running: bool,
+    /// When the session directory was created, ns: orders sessions started
+    /// within the same second (meta times are whole seconds).
+    pub created_ns: u128,
+}
+
+impl Info {
+    /// Chronological order. Nanosecond start time where recorded (older
+    /// sessions have whole seconds only), then directory creation time, which
+    /// some filesystems (tmpfs) do not report.
+    pub fn order(&self) -> (u64, u128) {
+        let secs = self.meta.last_started.max(self.meta.started).saturating_mul(1_000_000_000);
+        (self.meta.started_ns.max(secs), self.created_ns)
+    }
 }
 
 impl Info {
@@ -176,10 +264,17 @@ pub fn list() -> Vec<Info> {
             };
             let id = dir.file_name()?.to_string_lossy().into_owned();
             let running = running(&dir);
-            Some(Info { dir, id, meta, changes, running })
+            let created_ns = std::fs::metadata(&dir)
+                .and_then(|m| m.created())
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_nanos())
+                .unwrap_or(0);
+            Some(Info { dir, id, meta, changes, running, created_ns })
         })
         .collect();
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    // Oldest first, by when a box last ran on it (names do not sort by time).
+    out.sort_by_key(|i| i.order());
     out
 }
 

@@ -16,7 +16,9 @@ check() { # name, condition-exit-code, detail
   else printf 'check\t%-46s\tFAIL\t%s\n' "$1" "$3"; FAILS=$((FAILS+1)); fi
 }
 run() { "$PLYBOX" run --quiet --work "$1" -- sh -c "$2" >/dev/null 2>&1; }
-last() { ls -1 "$XDG_STATE_HOME/plybox/sessions" | sort | tail -1; }
+# The newest session, as plybox itself resolves `--last` (it names the
+# session it picked on stderr).
+last() { "$PLYBOX" diff --last 2>&1 >/dev/null | sed -n 's/^plybox: session //p'; }
 
 # --- 1. apply carries a deletion, an edit and a new file -------------------
 W1="$T/ws1"; mkdir -p "$W1"; echo keep > "$W1/keep.txt"; echo doomed > "$W1/doomed.txt"
@@ -48,7 +50,22 @@ msg="$("$PLYBOX" apply "$S3" 2>&1)"; code=$?
 [ $code -ne 0 ] && [ ! -e "$OUT/planted.txt" ] && [ ! -e "$W3/note.txt" ]
 check "write through a dir symlink out: refused, nothing applied" $? "$(echo "$msg" | head -1 | cut -c1-90)"
 
-# --- 3. discard and prune -----------------------------------------------------
+# --- 3. names: readable, prefix-selectable, never ambiguous -----------------
+echo "$S1" | grep -Eq '^[a-z]+-[a-z]+(-[0-9]+)?$'; check "new session gets a two-word name" $? "$S1"
+SB="$XDG_STATE_HOME/plybox/sessions"
+WN="$T/wsn"; mkdir -p "$WN"
+"$PLYBOX" run --quiet --session "$SB/alpha-one" --work "$WN" -- sh -c 'echo 1 > one.txt' >/dev/null 2>&1
+"$PLYBOX" run --quiet --session "$SB/alpha-two" --work "$WN" -- sh -c 'echo 2 > two.txt' >/dev/null 2>&1
+out="$("$PLYBOX" diff alpha-o 2>&1)"; echo "$out" | grep -q 'one.txt' && ! echo "$out" | grep -q 'two.txt'
+check "unique prefix selects one session" $? "alpha-o → $(echo "$out" | head -1)"
+out="$("$PLYBOX" diff alp 2>&1)"; code=$?; [ $code -ne 0 ] && echo "$out" | grep -q 'alpha-one' && echo "$out" | grep -q 'alpha-two'
+check "ambiguous prefix refused, candidates named" $? "$(echo "$out" | head -1 | cut -c1-80)"
+"$PLYBOX" discard al >/dev/null 2>&1; [ $? -ne 0 ] && [ -d "$SB/alpha-one" ] && [ -d "$SB/alpha-two" ]
+check "2-character prefix refused (discard)" $? "both alpha sessions still there"
+[ "$(last)" = alpha-two ]; check "--last is the most recently started" $? "$(last)"
+"$PLYBOX" discard alpha-one >/dev/null 2>&1; "$PLYBOX" discard alpha-two >/dev/null 2>&1
+
+# --- 4. discard and prune -----------------------------------------------------
 W4="$T/ws4"; mkdir -p "$W4"; run "$W4" 'true'; S4="$(last)"          # empty session
 W5="$T/ws5"; mkdir -p "$W5"; run "$W5" 'echo p > pending.txt'; S5="$(last)"  # pending session
 "$PLYBOX" sessions --prune > "$T/prune.txt" 2>&1
