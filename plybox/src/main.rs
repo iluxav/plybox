@@ -15,6 +15,7 @@
 //!      └─ plybox __inner (forwarder 127.0.0.1:3128 → proxy socket, reaper)
 //!         └─ the workload: landlock + no_new_privs + seccomp, then exec
 
+mod gvisor;
 mod inner;
 mod landlock_fs;
 mod launch;
@@ -30,7 +31,8 @@ use std::process::exit;
 
 fn usage() -> ! {
     eprintln!(
-        "usage: plybox run [--policy FILE] [--rootfs host|DIR] [--work DIR] [--workspace-mode overlay|bind]\n\
+        "usage: plybox run [--policy FILE] [--isolation ns|gvisor] [--runsc PATH]\n\
+         \x20                 [--rootfs host|DIR] [--work DIR] [--workspace-mode overlay|bind]\n\
          \x20                 [--allow HOST[:PORT]]... [--secret NAME[=VALUE]@HOST]... [--ro-bind HOST:BOX]...\n\
          \x20                 [--env K=V | --env K]... [--mem SIZE] [--pids N] [--cpu CORES]\n\
          \x20                 [--session DIR] [--quiet] -- COMMAND [ARGS...]\n\

@@ -88,6 +88,35 @@ held="$(awk -F'\t' '$1=="secretenv"{print $2}' "$OUT/plybox.tsv")"
 if [ "$held" = "$REAL" ]; then printf 's.env\tALLOWED\tANTHROPIC_API_KEY inside is the real value\n'
 else printf 's.env\tBLOCKED\tANTHROPIC_API_KEY inside is a placeholder (%s)\n' "${held:0:28}…"; fi >> "$OUT/plybox.host.tsv"
 
+# --- the gVisor tier, same probes, when runsc is available ---
+RUNSC="$LAB/tools/runsc"
+if [ -x "$RUNSC" ]; then
+  echo "running plybox --isolation gvisor" >&2
+  prepare plybox.gvisor
+  GSESSION="$RUN/session-gvisor"
+  "$PLYBOX" run --quiet --isolation gvisor --runsc "$RUNSC" --session "$GSESSION" --work "$WORK" \
+    --mem 512M --pids 512 \
+    --allow api.anthropic.com --allow '*.anthropic.com' --allow registry.npmjs.org \
+    --allow "$SECRET_HOST" --allow "$OTHER_HOST" \
+    --secret "ANTHROPIC_API_KEY=$REAL@$SECRET_HOST" --trust-ca "$RUN/ca/ca.pem" \
+    --map "$SECRET_HOST=127.0.0.1:$ECHO_A" --map "$OTHER_HOST=127.0.0.1:$ECHO_B" \
+    --env "SECRET_TEST_HOST=$SECRET_HOST" --env "SECRET_OTHER_HOST=$OTHER_HOST" --env PROBE_LAST=1 \
+    --ro-bind "$NODE_DIR:/opt/node" --env PATH=/opt/node/latest/bin:/usr/local/bin:/usr/bin:/bin \
+    --env PROBE_HOST_LO --env PROBE_HOST_LAN --env PROBE_HOST_HOME --env PROBE_HOST_UID \
+    --env PROBE_SSH_AUTH_SOCK --env PROBE_OUTSIDE \
+    -- sh /work/inside.sh /work/probe >"$OUT/plybox.gvisor.tsv" 2>"$OUT/plybox.gvisor.err" \
+    || echo "  plybox.gvisor exited nonzero — see $OUT/plybox.gvisor.err" >&2
+  hostcheck plybox.gvisor
+  if grep -qF -- "$REAL" "$OUT/plybox.gvisor.tsv" "$OUT/plybox.gvisor.err" 2>/dev/null; then
+    printf 's.leak\tALLOWED\tthe real secret appeared in the box'"'"'s output\n'
+  else
+    printf 's.leak\tBLOCKED\tthe real secret never appeared in the box'"'"'s output or stderr\n'
+  fi >> "$OUT/plybox.gvisor.host.tsv"
+  gheld="$(awk -F'\t' '$1=="secretenv"{print $2}' "$OUT/plybox.gvisor.tsv")"
+  if [ "$gheld" = "$REAL" ]; then printf 's.env\tALLOWED\tANTHROPIC_API_KEY inside is the real value\n'
+  else printf 's.env\tBLOCKED\tANTHROPIC_API_KEY inside is a placeholder (%s)\n' "${gheld:0:28}…"; fi >> "$OUT/plybox.gvisor.host.tsv"
+fi
+
 prepare host
 ( cd "$WORK" && "$PROBE" ) >"$OUT/host.tsv" 2>/dev/null || true
 "$PROBE" --list >"$OUT/probes.tsv"
@@ -98,6 +127,9 @@ t() { local s; s=$(date +%s%N); "$@" >/dev/null 2>&1 || true; echo $(( ($(date +
   echo "tier	median_ms"
   echo "host	$(for i in $(seq 10); do t /bin/true; done | med)"
   echo "plybox run	$(cd "$RUN" && for i in $(seq 10); do t "$PLYBOX" run --quiet --session "$RUN/lat-$i" --work "$RUN" -- /bin/true; done | med)"
+  if [ -x "$RUNSC" ]; then
+    echo "plybox run --isolation gvisor	$(cd "$RUN" && for i in $(seq 10); do t "$PLYBOX" run --quiet --isolation gvisor --runsc "$RUNSC" --session "$RUN/glat-$i" --work "$RUN" -- /bin/true; done | med)"
+  fi
 } > "$OUT/latency.tsv"
 
 python3 "$LAB/v0/report.py" "$OUT" | tee "$OUT/report.md"

@@ -56,6 +56,10 @@ pub fn main(args: &[String]) -> Result<i32, String> {
         return Err("__inner: nothing to run".into());
     }
 
+    // HOME may be a fresh tmpfs (gVisor tier): make the directory exist.
+    if let Ok(home) = std::env::var("HOME") {
+        let _ = std::fs::create_dir_all(&home);
+    }
     let listener = TcpListener::bind(LISTEN).map_err(|e| format!("forwarder bind {LISTEN}: {e}"))?;
     let program = seccomp::program()?;
     let ruleset = landlock_fs::build(RO, RW)?;
@@ -130,9 +134,13 @@ pub fn main(args: &[String]) -> Result<i32, String> {
 
 /// One in-box TCP connection ↔ the proxy's unix socket.
 fn bridge(tcp: TcpStream, sock: &PathBuf) {
-    let Ok(unix) = UnixStream::connect(sock) else {
-        let _ = tcp.shutdown(Shutdown::Both);
-        return;
+    let unix = match UnixStream::connect(sock) {
+        Ok(u) => u,
+        Err(e) => {
+            eprintln!("plybox: forwarder: cannot reach the proxy at {}: {e}", sock.display());
+            let _ = tcp.shutdown(Shutdown::Both);
+            return;
+        }
     };
     let (Ok(mut t2), Ok(mut u2)) = (tcp.try_clone(), unix.try_clone()) else { return };
     let (mut t1, mut u1) = (tcp, unix);

@@ -220,3 +220,17 @@ limits (direct when the kernel allows, else `systemd-run --user`). Result:
 Untested so far: `apply` of a deletion (overlay whiteout) — the smoke test
 that would have covered it was blocked by a safety check on `rm` in a
 script and was not run.
+
+Slice 4 (2026-11-07): `--isolation gvisor`. plybox writes a real OCI bundle
+(same mounts as the bubblewrap box, no host filesystem, only the proxy's
+socket directory, uid with no capabilities, `--host-uds=open`,
+`--overlay2=root:memory`, RLIMIT_NPROC from `--pids`). Result: **0 open
+doors of 41** in the gVisor tier too, all 7 workloads correct, 19 ms start.
+Three facts learned the hard way: an overlay over every mount copies the
+proxy socket up into memory and kills it (rootfs-only overlay instead); a
+unix-socket connect needs write permission and gVisor enforces it, while
+our files appear root-owned inside, so the socket is world-connectable
+behind a 0700 sessions base; a host cgroup's pids.max does not bound
+guest processes, but RLIMIT_NPROC inside the sandbox does (fork refused at
+508 of 512). In this tier the workspace is read-only unless
+`--workspace-mode bind`.

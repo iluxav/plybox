@@ -75,8 +75,16 @@ impl Enforcer {
         }
     }
 
-    /// Turn `bwrap ARGS` into the command that runs it under the limits.
-    pub fn command(&self, bwrap: &Path, args: &[String]) -> Command {
+    /// Turn `engine ARGS` into the command that runs it under the limits.
+    pub fn command(&self, engine: &Path, args: &[String]) -> Command {
+        let mut c = Command::new(engine);
+        c.args(args);
+        self.wrap(&mut c)
+    }
+
+    /// Apply the limits to an already-built command. systemd-run mode
+    /// returns a new command that wraps it; the others modify it in place.
+    pub fn wrap(&self, inner: &mut Command) -> Command {
         match &self.mode {
             Mode::SystemdRun => {
                 let mut c = Command::new("systemd-run");
@@ -90,23 +98,23 @@ impl Enforcer {
                 if let Some(cpu) = self.limits.cpu {
                     c.arg("-p").arg(format!("CPUQuota={}%", (cpu * 100.0).round() as u64));
                 }
-                c.arg("--").arg(bwrap).args(args);
+                c.arg("--").arg(inner.get_program()).args(inner.get_args());
                 c
             }
             Mode::Direct(cg) => {
-                let mut c = Command::new(bwrap);
-                c.args(args);
                 let procs = cg.join("cgroup.procs");
+                let mut c = Command::new(inner.get_program());
+                c.args(inner.get_args());
                 // Runs in the child between fork and exec: join the box's
-                // cgroup before bwrap starts, so nothing escapes the limit.
+                // cgroup before the engine starts, so nothing escapes the limit.
                 unsafe {
                     c.pre_exec(move || std::fs::write(&procs, "0"));
                 }
                 c
             }
             Mode::None => {
-                let mut c = Command::new(bwrap);
-                c.args(args);
+                let mut c = Command::new(inner.get_program());
+                c.args(inner.get_args());
                 c
             }
         }

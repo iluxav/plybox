@@ -20,6 +20,11 @@ Run an AI agent in a box whose only way out is through plybox.
   kernel allows, else through `systemd-run --user`).
 - **Record**: every connection decision, every substitution, start and
   exit — one JSON line each, kept with the session.
+- **Second kernel, when the code itself is untrusted**: `--isolation gvisor`
+  runs the same box under gVisor's user-space kernel (rootless, no KVM),
+  with a real OCI bundle — the same mounts, no host filesystem, one socket.
+  19 ms instead of 3. In this tier the workspace is read-only unless you
+  choose `--workspace-mode bind`.
 
 No root. No daemon. Namespaces come from bubblewrap, the same engine
 Anthropic's sandbox-runtime and Greywall use; everything around it is
@@ -54,16 +59,18 @@ PATH = "/opt/node/latest/bin:/usr/local/bin:/usr/bin:/bin"
 
 ## Status
 
-Slices 1–3 done. Measured by `lab/v0/run.sh` against 41 attacker probes on
-one machine: **0 open doors** (1 unmeasurable: no ssh-agent there) — 0
-kernel, 0 process, 0 files/secrets/IPC, 0 network, 0 resources — with
-curl, npm and node working, a secret substituted toward its host and
-withheld from another, and a 3 ms start.
+Slices 1–4 done. Measured by `lab/v0/run.sh` against 41 attacker probes on
+one machine, both tiers: **0 open doors** (1 unmeasurable: no ssh-agent
+there) — 0 kernel, 0 process, 0 files/secrets/IPC, 0 network, 0
+resources — with curl, npm and node working, a secret substituted toward
+its host and withheld from another; 3 ms start (namespaces), 19 ms
+(gVisor).
 
-Next: a gVisor tier for untrusted code, and a learning mode (run in audit,
-generate the allow list, switch to enforce).
+Next: a learning mode (run in audit, generate the allow list from what the
+agent actually reached, switch to enforce).
 
 Everything claimed here has a probe in `lab/`. Read `lab/README.md`.
 
 Requires: Linux x86_64, bubblewrap, unprivileged user namespaces; for
-limits on a desktop, a user systemd session.
+limits on a desktop, a user systemd session; for `--isolation gvisor`,
+gVisor's `runsc` (`lab/tools/fetch.sh` shows how to fetch and verify it).

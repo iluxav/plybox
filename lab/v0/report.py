@@ -56,6 +56,9 @@ def main():
     if kern:
         data["lab box (bwrap+boxer)"] = with_hostside(load_tsv(kern / "box.boxer.tsv", prefix="probe"), kern / "box.boxer.host.tsv")
     data["plybox"] = with_hostside(load_tsv(out / "plybox.tsv", prefix="probe"), out / "plybox.host.tsv")
+    if (out / "plybox.gvisor.tsv").exists():
+        data["plybox --isolation gvisor"] = with_hostside(
+            load_tsv(out / "plybox.gvisor.tsv", prefix="probe"), out / "plybox.gvisor.host.tsv")
     cols = list(data)
 
     def v(col, i):
@@ -92,31 +95,34 @@ def main():
         else:
             print("None — the binary reproduces the lab box exactly.")
 
-    hostside = load_tsv(out / "plybox.host.tsv")
-    if "s.env" in hostside or "s.leak" in hostside:
-        print("\n## Secrets\n")
-        print("| check | result | detail |")
-        print("|---|---|---|")
-        for i in ("s.env", "s.leak"):
-            verdict, detail = hostside.get(i, ("NA", "not run"))
-            print(f"| `{i}` | {CELL.get(verdict, '?')} | {detail} |")
+    for col, stem in (("plybox", "plybox"), ("plybox --isolation gvisor", "plybox.gvisor")):
+        if not (out / f"{stem}.tsv").exists():
+            continue
+        hostside = load_tsv(out / f"{stem}.host.tsv")
+        if "s.env" in hostside or "s.leak" in hostside:
+            print(f"\n## Secrets ({col})\n")
+            print("| check | result | detail |")
+            print("|---|---|---|")
+            for i in ("s.env", "s.leak"):
+                verdict, detail = hostside.get(i, ("NA", "not run"))
+                print(f"| `{i}` | {CELL.get(verdict, '?')} | {detail} |")
 
-    wl = load_workloads(out / "plybox.tsv")
-    print("\n## Workloads under plybox\n")
-    print("| workload | wanted | verdict | detail |")
-    print("|---|---|---|---|")
-    for name, want, verdict, detail in wl:
-        print(f"| {name} | {want} | {verdict} | {detail} |")
-    fails = [w[0] for w in wl if w[2] != "pass"]
-    print(f"\n**{'FAILs: ' + ', '.join(fails) if fails else f'All {len(wl)} workloads behaved as wanted.'}**"
-          if wl else "\n**No workload rows — the script did not run to completion.**")
-    err = out / "plybox.err"
-    if err.exists() and err.stat().st_size:
-        lines = [l for l in err.read_text().splitlines() if l.strip()]
-        if lines:
-            print("\nstderr:\n")
-            for l in lines[:10]:
-                print(f"    {l[:160]}")
+        wl = load_workloads(out / f"{stem}.tsv")
+        print(f"\n## Workloads ({col})\n")
+        print("| workload | wanted | verdict | detail |")
+        print("|---|---|---|---|")
+        for name, want, verdict, detail in wl:
+            print(f"| {name} | {want} | {verdict} | {detail} |")
+        fails = [w[0] for w in wl if w[2] != "pass"]
+        print(f"\n**{'FAILs: ' + ', '.join(fails) if fails else f'All {len(wl)} workloads behaved as wanted.'}**"
+              if wl else "\n**No workload rows — the script did not run to completion.**")
+        err = out / f"{stem}.err"
+        if err.exists() and err.stat().st_size:
+            lines = [l for l in err.read_text().splitlines() if l.strip()]
+            if lines:
+                print("\nstderr:\n")
+                for l in lines[:10]:
+                    print(f"    {l[:160]}")
 
     diff = out / "diff.txt"
     if diff.exists():
@@ -152,9 +158,10 @@ def main():
             print(f"- refused {r.get('host', r.get('target', '?'))}: {r.get('reason')}")
         for r in errors[:6]:
             print(f"- **error** {r.get('host', '?')}: {r.get('reason')}")
-        still = [i for i in order if v("plybox", i) == "ALLOWED"]
-        print("\n## Still open in plybox (slice 1)\n")
-        print("\n".join(f"- `{i}` — {why[i]}" for i in still) if still else "Nothing measurable here.")
+        for col in [c for c in cols if c.startswith("plybox")]:
+            still = [i for i in order if v(col, i) == "ALLOWED"]
+            print(f"\n## Still open in {col}\n")
+            print("\n".join(f"- `{i}` — {why[i]}: {data[col][i][1][:100]}" for i in still) if still else "Nothing measurable here.")
 
 
 if __name__ == "__main__":

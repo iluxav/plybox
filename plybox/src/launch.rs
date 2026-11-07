@@ -17,6 +17,7 @@ use std::sync::Arc;
 
 use serde_json::json;
 
+use crate::gvisor;
 use crate::limits::{self, Enforcer, Limits};
 use crate::policy::Policy;
 use crate::proxy::{Allow, Proxy};
@@ -27,16 +28,24 @@ use crate::workspace;
 const PROXY_PORT: u16 = 3128;
 
 pub fn run(pol: Policy, cmd: Vec<String>, session: Option<PathBuf>, quiet: bool) -> Result<i32, String> {
-    let bwrap = which("bwrap").ok_or("bubblewrap (bwrap) not found — plybox uses it for namespaces")?;
+    let gvisor_tier = pol.isolation == "gvisor";
+    let engine: PathBuf = if gvisor_tier {
+        gvisor::find_runsc(pol.runsc.as_deref())?
+    } else {
+        which("bwrap").ok_or("bubblewrap (bwrap) not found — plybox uses it for namespaces")?
+    };
     let work = pol.workspace_abs()?;
     let session = session.map(Ok).unwrap_or_else(default_session)?;
     std::fs::create_dir_all(&session).map_err(|e| format!("session {}: {e}", session.display()))?;
     let session = std::fs::canonicalize(&session).map_err(|e| format!("session {}: {e}", session.display()))?;
     let record = Arc::new(Record::open(&session.join("record.jsonl")).map_err(|e| format!("record: {e}"))?);
     let overlay = pol.fs.workspace_mode == "overlay";
-    if overlay {
+    if overlay && !gvisor_tier {
         std::fs::create_dir_all(session.join("upper")).map_err(|e| format!("upper: {e}"))?;
         std::fs::create_dir_all(session.join("work")).map_err(|e| format!("overlay work: {e}"))?;
+    }
+    if overlay && gvisor_tier && !quiet {
+        eprintln!("plybox: gVisor tier: the workspace is read-only; writes go to $HOME and /tmp and vanish at exit (use --workspace-mode bind to write to the directory)");
     }
     std::fs::write(
         session.join("meta.json"),
@@ -58,9 +67,31 @@ pub fn run(pol: Policy, cmd: Vec<String>, session: Option<PathBuf>, quiet: bool)
     let enforcer = Enforcer::prepare(lim, &session_id);
 
     // The proxy: bound before anything else so the box can connect at once.
-    let sock = session.join("proxy.sock");
+    // The socket lives in its own small directory, which is the only part of
+    // the session the box may write to: connecting to a unix socket needs
+    // write permission on it, and gVisor refuses that on a read-only mount.
+    std::fs::create_dir_all(session.join("sock")).map_err(|e| format!("sock dir: {e}"))?;
+    // Permissions, host side: the sessions base is 0700, so no other user on
+    // the host reaches any session. Inside the gVisor tier our files show
+    // up as root's while the workload runs as our uid, so the session dir is
+    // 0711 (traverse, no listing) and the socket is world-connectable — the
+    // 0700 base is what actually guards them.
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let base = workspace::sessions_base();
+        if session.starts_with(&base) {
+            let _ = std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o700));
+        }
+        let _ = std::fs::set_permissions(&session, std::fs::Permissions::from_mode(0o711));
+        let _ = std::fs::set_permissions(session.join("sock"), std::fs::Permissions::from_mode(0o711));
+    }
+    let sock = session.join("sock/proxy.sock");
     let _ = std::fs::remove_file(&sock);
     let listener = UnixListener::bind(&sock).map_err(|e| format!("proxy socket {}: {e}", sock.display()))?;
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&sock, std::fs::Permissions::from_mode(0o777));
+    }
     let allow = Allow::parse(&pol.net.allow)?;
 
     // Secrets stay here. If there are any, a session CA is made so the
@@ -79,7 +110,8 @@ pub fn run(pol: Policy, cmd: Vec<String>, session: Option<PathBuf>, quiet: bool)
     record.event(
         "start",
         json!({
-            "cmd": cmd, "rootfs": pol.fs.rootfs, "workspace": work, "workspace_mode": pol.fs.workspace_mode,
+            "cmd": cmd, "isolation": pol.isolation, "rootfs": pol.fs.rootfs, "workspace": work,
+            "workspace_mode": if gvisor_tier && overlay { "read-only (gvisor tier)" } else { pol.fs.workspace_mode.as_str() },
             "allow": pol.net.allow,
             "secrets": secret_list.iter().map(|s| format!("{}@{}", s.name, s.host)).collect::<Vec<_>>(),
             "limits": { "mem": pol.limits.mem, "pids": pol.limits.pids, "cpu": pol.limits.cpu, "via": enforcer.describe() },
@@ -88,7 +120,8 @@ pub fn run(pol: Policy, cmd: Vec<String>, session: Option<PathBuf>, quiet: bool)
     );
     if !quiet {
         eprintln!(
-            "plybox: box up — network: {}; secrets: {}; workspace {} at /work ({}); limits: {}; record {}",
+            "plybox: box up ({}) — network: {}; secrets: {}; workspace {} at /work ({}); limits: {}; record {}",
+            pol.isolation,
             if pol.net.allow.is_empty() { "none".to_string() } else { pol.net.allow.join(", ") },
             secret_list.len(),
             work.display(),
@@ -102,20 +135,32 @@ pub fn run(pol: Policy, cmd: Vec<String>, session: Option<PathBuf>, quiet: bool)
     }
 
     let me = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
-    let argv = bwrap_argv(&pol, &work, &session, &me, &cmd, &secret_list, tls.is_some(), overlay)?;
-    let status = enforcer.command(&bwrap, &argv).status().map_err(|e| format!("bwrap: {e}"))?;
+    let env = box_env(&pol, &secret_list, tls.is_some());
+    let inner_argv: Vec<String> = ["/plybox", "__inner", "--proxy-sock", "/run/plybox/sock/proxy.sock", "--"]
+        .iter()
+        .map(|s| s.to_string())
+        .chain(cmd.iter().cloned())
+        .collect();
+    let status = if gvisor_tier {
+        let bundle = gvisor::write_bundle(&pol, &work, &session, &me, &inner_argv, &env, !overlay)?;
+        let mut c = gvisor::command(&engine, &session, &bundle, &session_id);
+        enforcer.wrap(&mut c).status().map_err(|e| format!("runsc: {e}"))?
+    } else {
+        let argv = bwrap_argv(&pol, &work, &session, &env, &inner_argv, overlay)?;
+        enforcer.command(&engine, &argv).status().map_err(|e| format!("bwrap: {e}"))?
+    };
     let code = status.code().unwrap_or(128 + status_signal(&status));
     enforcer.finish();
     // The box is gone, so its ends of any tunnels are closed; give the
     // tunnel threads a moment to write their record lines.
     proxy.drain(std::time::Duration::from_secs(2));
-    let changed = if overlay {
+    let changed = if overlay && !gvisor_tier {
         workspace::Session { dir: session.clone(), workspace: work.clone() }.changes().map(|c| c.len()).unwrap_or(0)
     } else {
         0
     };
     record.event("exit", json!({ "code": code, "workspace_changes": changed }));
-    if !quiet && overlay {
+    if !quiet && overlay && !gvisor_tier {
         eprintln!(
             "plybox: box exited {code}; {changed} workspace change(s) held in the session — `plybox diff {0}` / `plybox apply {0}`",
             session.display()
@@ -134,16 +179,54 @@ fn parse_maps(entries: &[String]) -> Result<std::collections::HashMap<String, st
     Ok(m)
 }
 
+/// The environment inside the box: tight defaults, the policy's values, the
+/// session CA (when TLS is terminated) and, last, the secret placeholders.
+fn box_env(pol: &Policy, secret_list: &[Secret], trust_session_ca: bool) -> Vec<(String, String)> {
+    let proxy_url = format!("http://127.0.0.1:{PROXY_PORT}");
+    let mut env: Vec<(String, String)> = vec![
+        ("HOME".into(), "/home/box".into()),
+        ("USER".into(), "box".into()),
+        ("TERM".into(), "dumb".into()),
+        ("LANG".into(), "C.UTF-8".into()),
+        ("PATH".into(), "/usr/local/bin:/usr/bin:/bin".into()),
+        ("HTTPS_PROXY".into(), proxy_url.clone()),
+        ("HTTP_PROXY".into(), proxy_url.clone()),
+        ("https_proxy".into(), proxy_url.clone()),
+        ("http_proxy".into(), proxy_url),
+        ("NO_PROXY".into(), "localhost,127.0.0.1".into()),
+        ("no_proxy".into(), "localhost,127.0.0.1".into()),
+        ("NODE_USE_ENV_PROXY".into(), "1".into()),
+    ];
+    let set = |env: &mut Vec<(String, String)>, k: &str, v: &str| {
+        env.retain(|(ek, _)| ek != k);
+        env.push((k.to_string(), v.to_string()));
+    };
+    for (k, v) in &pol.env {
+        set(&mut env, k, v);
+    }
+    if trust_session_ca {
+        for k in ["SSL_CERT_FILE", "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE", "GIT_SSL_CAINFO"] {
+            set(&mut env, k, "/run/plybox/bundle.pem");
+        }
+        set(&mut env, "NODE_EXTRA_CA_CERTS", "/run/plybox/ca.pem");
+    }
+    // Placeholders last: a secret's name always holds the placeholder, never
+    // a value that slipped in through --env.
+    for s in secret_list {
+        set(&mut env, &s.name, &s.placeholder);
+    }
+    env
+}
+
 fn bwrap_argv(
     pol: &Policy,
     work: &Path,
     session: &Path,
-    me: &Path,
-    cmd: &[String],
-    secret_list: &[Secret],
-    trust_session_ca: bool,
+    env: &[(String, String)],
+    inner_argv: &[String],
     overlay: bool,
 ) -> Result<Vec<String>, String> {
+    let me = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
     let mut a: Vec<String> = vec![];
     let mut push = |xs: &[&str]| a.extend(xs.iter().map(|s| s.to_string()));
 
@@ -179,56 +262,20 @@ fn bwrap_argv(
         push(&["--bind", &work.to_string_lossy(), "/work"]);
     }
     push(&["--ro-bind", &session.to_string_lossy(), "/run/plybox"]);
+    push(&["--bind", &session.join("sock").to_string_lossy(), "/run/plybox/sock"]);
     push(&["--ro-bind", &me.to_string_lossy(), "/plybox"]);
+    let _ = pol; // rootfs/ro_bind consumed above
     for pair in &pol.fs.ro_bind {
         let (h, b) = pair.split_once(':').ok_or_else(|| format!("ro_bind `{pair}`: expected HOST:BOX"))?;
         push(&["--ro-bind", h, b]);
     }
 
     push(&["--chdir", "/work", "--cap-drop", "ALL", "--disable-userns", "--clearenv"]);
-
-    // Environment: tight defaults, then the policy's values on top.
-    let proxy_url = format!("http://127.0.0.1:{PROXY_PORT}");
-    let mut env: Vec<(String, String)> = vec![
-        ("HOME".into(), "/home/box".into()),
-        ("USER".into(), "box".into()),
-        ("TERM".into(), "dumb".into()),
-        ("LANG".into(), "C.UTF-8".into()),
-        ("PATH".into(), "/usr/local/bin:/usr/bin:/bin".into()),
-        ("HTTPS_PROXY".into(), proxy_url.clone()),
-        ("HTTP_PROXY".into(), proxy_url.clone()),
-        ("https_proxy".into(), proxy_url.clone()),
-        ("http_proxy".into(), proxy_url),
-        ("NO_PROXY".into(), "localhost,127.0.0.1".into()),
-        ("no_proxy".into(), "localhost,127.0.0.1".into()),
-        ("NODE_USE_ENV_PROXY".into(), "1".into()),
-    ];
-    for (k, v) in &pol.env {
-        env.retain(|(ek, _)| ek != k);
-        env.push((k.clone(), v.clone()));
-    }
-    // The session CA, so TLS the proxy terminates is trusted by curl, git,
-    // python and node inside.
-    if trust_session_ca {
-        for k in ["SSL_CERT_FILE", "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE", "GIT_SSL_CAINFO"] {
-            env.retain(|(ek, _)| ek != k);
-            env.push((k.into(), "/run/plybox/bundle.pem".into()));
-        }
-        env.retain(|(ek, _)| ek != "NODE_EXTRA_CA_CERTS");
-        env.push(("NODE_EXTRA_CA_CERTS".into(), "/run/plybox/ca.pem".into()));
-    }
-    // Placeholders last: a secret's name always holds the placeholder, never
-    // a value that slipped in through --env.
-    for s in secret_list {
-        env.retain(|(ek, _)| ek != &s.name);
-        env.push((s.name.clone(), s.placeholder.clone()));
-    }
-    for (k, v) in &env {
+    for (k, v) in env {
         push(&["--setenv", k, v]);
     }
-
-    push(&["--", "/plybox", "__inner", "--proxy-sock", "/run/plybox/proxy.sock", "--"]);
-    a.extend(cmd.iter().cloned());
+    push(&["--"]);
+    a.extend(inner_argv.iter().cloned());
     Ok(a)
 }
 

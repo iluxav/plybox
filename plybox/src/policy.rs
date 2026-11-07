@@ -40,6 +40,17 @@ pub struct Policy {
     /// Per-box limits: `mem = "512M"`, `pids = 512`, `cpu = 1.5` (cores).
     #[serde(default)]
     pub limits: LimitsSpec,
+    /// `"ns"` (default): namespaces via bubblewrap. `"gvisor"`: gVisor's
+    /// user-space kernel in between, for code you do not trust.
+    #[serde(default = "default_isolation")]
+    pub isolation: String,
+    /// Path to gVisor's `runsc` (default: found on PATH).
+    #[serde(default)]
+    pub runsc: Option<String>,
+}
+
+fn default_isolation() -> String {
+    "ns".into()
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -150,6 +161,7 @@ pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, Option<PathBuf
     let mut map: Vec<String> = vec![];
     let mut workspace_mode: Option<String> = None;
     let (mut mem, mut pids, mut cpu) = (None::<String>, None::<u32>, None::<f64>);
+    let (mut isolation, mut runsc) = (None::<String>, None::<String>);
     let mut session: Option<PathBuf> = None;
     let mut quiet = false;
     let mut cmd: Vec<String> = vec![];
@@ -180,6 +192,8 @@ pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, Option<PathBuf
             "--trust-ca" => trust_ca.push(need("--trust-ca")?),
             "--map" => map.push(need("--map")?),
             "--workspace-mode" => workspace_mode = Some(need("--workspace-mode")?),
+            "--isolation" => isolation = Some(need("--isolation")?),
+            "--runsc" => runsc = Some(need("--runsc")?),
             "--mem" => mem = Some(need("--mem")?),
             "--pids" => pids = Some(need("--pids")?.parse().map_err(|_| "--pids: expected a number")?),
             "--cpu" => cpu = Some(need("--cpu")?.parse().map_err(|_| "--cpu: expected a number of cores")?),
@@ -212,6 +226,15 @@ pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, Option<PathBuf
             return Err(format!("--workspace-mode `{m}`: expected overlay or bind"));
         }
         p.fs.workspace_mode = m;
+    }
+    if let Some(i) = isolation {
+        if i != "ns" && i != "gvisor" {
+            return Err(format!("--isolation `{i}`: expected ns or gvisor"));
+        }
+        p.isolation = i;
+    }
+    if runsc.is_some() {
+        p.runsc = runsc;
     }
     if mem.is_some() {
         p.limits.mem = mem;
