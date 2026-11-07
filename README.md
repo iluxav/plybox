@@ -137,11 +137,24 @@ whole apply if any change would land outside the workspace
 (`make test-sessions`: 22 session checks, 35 resume checks).
 
 Known gaps: resume restores only workspace files, not processes or agent
-conversation history; `ioctl` is allowed for every
-request code; x86_64 only; private registries (login) are not supported
+conversation history; x86_64 only; private registries (login) are not supported
 yet; under gVisor, an extra `--ro-bind` target missing from an image is
 created inside the cached image; exfiltration *through an allowed host* is
 not something any sandbox stops — keep the allow list short.
+
+## Storage and traffic caps
+
+Use `--file-size 256M --tmpfs 192M --bytes-out 20M --bytes-in 200M`
+(or the matching `[limits]` TOML fields) to bound file sizes, temporary
+storage and run-wide proxy traffic. The ioctl filter now permits only
+specific terminal and descriptor I/O requests.
+
+`--disk 1G` additionally requires a pre-provisioned session volume with at
+most 1 GiB data capacity. It refuses an ordinary directory on a larger
+filesystem; it does not create a directory quota. Disk and scratch caps
+currently support namespace isolation only, and need bubblewrap 0.9+. See [limit semantics and setup](docs/limits.md)
+for scope, resume behavior and limitations. Run `make test-limits` to exercise
+these controls locally without external API calls.
 
 ## Layout
 
@@ -162,7 +175,7 @@ docs/           research.md: the measurements that shaped the design
 `make test-all` runs every suite. Everything claimed here has a test in
 `tests/`; the reasons behind the design are in `docs/research.md`.
 
-Requires: Linux x86_64, bubblewrap, unprivileged user namespaces (kernel
+Requires: Linux x86_64, bubblewrap (0.9+ for `--tmpfs`/`--disk`), unprivileged user namespaces (kernel
 5.11+ for unprivileged overlayfs); for limits on a desktop, a user systemd
 session; for `--isolation gvisor`, gVisor's `runsc` (`make tools` fetches
 and verifies it for the tests). Use the static musl build: images run

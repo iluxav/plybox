@@ -10,6 +10,7 @@
 //!      scope with the limits as properties. OOMPolicy=continue, so when the
 //!      kernel kills one process for exceeding MemoryMax the box carries on
 //!      (the lab's first run showed the default stops the whole scope).
+//!
 //! If neither works, the run proceeds and says so — the probe suite will
 //! show the two resource doors open, which is the honest outcome.
 
@@ -38,7 +39,8 @@ pub fn parse_size(s: &str) -> Result<u64, String> {
         Some('G') | Some('g') => (&s[..s.len() - 1], 1u64 << 30),
         _ => (s, 1),
     };
-    num.parse::<u64>().map(|n| n * mult).map_err(|_| format!("size `{s}`: expected a number with K/M/G"))
+    num.parse::<u64>().ok().and_then(|n| n.checked_mul(mult))
+        .ok_or_else(|| format!("size `{s}`: expected a number with K/M/G that fits in u64"))
 }
 
 pub enum Mode {
@@ -188,4 +190,17 @@ fn systemd_run_works() -> bool {
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn sizes_reject_overflow_instead_of_wrapping() {
+        assert_eq!(parse_size("2G").unwrap(), 2147483648);
+        assert_eq!(parse_size(" 0 ").unwrap(), 0);
+        for invalid in ["", "-1", "1.5G", "18446744073709551616", "18446744073709551615G"] {
+            assert!(parse_size(invalid).is_err(), "accepted {invalid}");
+        }
+    }
 }

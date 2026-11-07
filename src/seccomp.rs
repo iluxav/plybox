@@ -12,6 +12,8 @@
 //!     AF_ALG and NETLINK_NETFILTER.
 //!   * `clone` — only when CLONE_NEWUSER is clear. `clone3` is off the list
 //!     → ENOSYS → glibc falls back to `clone`.
+//!   * `ioctl` — exact terminal and descriptor I/O requests only; all
+//!     other requests return ENOSYS, including filesystem/device controls.
 //!
 //! x86_64 for now: the list names `libc::SYS_*` constants.
 
@@ -108,7 +110,6 @@ const ALLOW: &[libc::c_long] = &[
     libc::SYS_setsockopt, libc::SYS_getsockopt,
     libc::SYS_sendto, libc::SYS_recvfrom, libc::SYS_sendmsg, libc::SYS_recvmsg,
     libc::SYS_sendmmsg, libc::SYS_recvmmsg,
-    libc::SYS_ioctl,
 ];
 
 /// Build the filter program. Done in the parent, before fork, so the child
@@ -132,6 +133,28 @@ pub fn program() -> Result<BpfProgram, String> {
         libc::SYS_clone,
         vec![SeccompRule::new(vec![Cond::new(0, Len::Qword, Op::MaskedEq(CLONE_NEWUSER), 0).unwrap()]).unwrap()],
     );
+    // Requests are unsigned int in the Linux ABI: compare the low 32 bits.
+    // No wildcard families, device administration, terminal injection,
+    // descriptor-based namespace access or filesystem flag manipulation.
+    let ioctls: &[u64] = &[
+        0x5401, // TCGETS: isatty / terminal attributes
+        0x5402, 0x5403, 0x5404, // TCSETS, TCSETSW, TCSETSF
+        0x802c542a, 0x402c542b, 0x402c542c, 0x402c542d, // TCGETS2 / TCSETS*2 (newer libc)
+        0x540f, 0x5410, // TIOCGPGRP, TIOCSPGRP: shell job control
+        0x5413, 0x5414, // TIOCGWINSZ, TIOCSWINSZ: terminal dimensions
+        0x541b, 0x5421, // FIONREAD, FIONBIO: buffered bytes / nonblocking I/O
+        0x5450, 0x5451, // FIONCLEX, FIOCLEX: descriptor close-on-exec
+        0x80045430, 0x40045431, // TIOCGPTN, TIOCSPTLCK: openpty
+    ];
+    rules.insert(libc::SYS_ioctl, ioctls.iter().map(|&request|
+        SeccompRule::new(vec![Cond::new(1, Len::Dword, Op::Eq, request).unwrap()]).unwrap()
+    ).collect());
+    // login_tty/forkpty need to acquire their own controlling terminal.
+    // Only argument zero: never request stealing another session's tty.
+    rules.get_mut(&libc::SYS_ioctl).unwrap().push(SeccompRule::new(vec![
+        Cond::new(1, Len::Dword, Op::Eq, 0x540e).unwrap(), // TIOCSCTTY
+        Cond::new(2, Len::Qword, Op::Eq, 0).unwrap(),
+    ]).unwrap());
     let filter = SeccompFilter::new(
         rules,
         SeccompAction::Errno(libc::ENOSYS as u32),
@@ -144,4 +167,44 @@ pub fn program() -> Result<BpfProgram, String> {
 
 pub fn apply(program: &BpfProgram) -> Result<(), String> {
     seccompiler::apply_filter(program).map_err(|e| format!("seccomp apply: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn kernel_ioctl_allowlist() {
+        if std::env::var_os("PLYBOX_IOCTL_TEST_CHILD").is_none() {
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "seccomp::tests::kernel_ioctl_allowlist", "--nocapture"])
+                .env("PLYBOX_IOCTL_TEST_CHILD", "1").status().unwrap();
+            assert!(status.success());
+            return;
+        }
+        apply(&program().unwrap()).unwrap();
+        unsafe {
+            let mut pipe = [0; 2];
+            assert_eq!(libc::pipe(pipe.as_mut_ptr()), 0);
+            assert_eq!(libc::write(pipe[1], b"hello".as_ptr().cast(), 5), 5);
+            let mut bytes = 0i32;
+            assert_eq!(libc::ioctl(pipe[0], libc::FIONREAD, &mut bytes), 0);
+            assert_eq!(bytes, 5);
+            // Invalid fd means these calls are harmless even without a filter.
+            // ENOSYS rather than EBADF proves rejection by the filter.
+            for request in [0x5412u64, 0x541c, 0x40086602, 0x40045441, 0xdeadbeef] {
+                assert_eq!(libc::syscall(libc::SYS_ioctl, -1, request, 0), -1);
+                assert_eq!(std::io::Error::last_os_error().raw_os_error(), Some(libc::ENOSYS));
+            }
+            assert_eq!(libc::syscall(libc::SYS_ioctl, -1, 0x540e, 1), -1);
+            assert_eq!(std::io::Error::last_os_error().raw_os_error(), Some(libc::ENOSYS));
+            // Match the kernel's unsigned-int request conversion.
+            assert_eq!(libc::syscall(libc::SYS_ioctl, pipe[0], 0x10000541bu64, &mut bytes), 0);
+            let mut master = -1; let mut slave = -1;
+            assert_eq!(libc::openpty(&mut master, &mut slave, std::ptr::null_mut(), std::ptr::null(), std::ptr::null()), 0);
+            let mut term: libc::termios = std::mem::zeroed();
+            assert_eq!(libc::tcgetattr(slave, &mut term), 0, "{}", std::io::Error::last_os_error());
+            assert_eq!(libc::tcsetattr(slave, libc::TCSANOW, &term), 0);
+            for fd in [pipe[0], pipe[1], master, slave] { libc::close(fd); }
+        }
+    }
 }

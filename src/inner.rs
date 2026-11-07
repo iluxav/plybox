@@ -41,12 +41,14 @@ extern "C" fn forward(sig: libc::c_int) {
 pub fn main(args: &[String]) -> Result<i32, String> {
     let mut sock: Option<PathBuf> = None;
     let mut ro_root = false;
+    let mut file_size = None;
     let mut cmd: Vec<String> = vec![];
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--proxy-sock" => sock = it.next().map(PathBuf::from),
             "--ro-root" => ro_root = true,
+            "--file-size" => file_size = Some(crate::limits::parse_size(it.next().ok_or("--file-size needs a value")?)?),
             "--" => {
                 cmd = it.cloned().collect();
                 break;
@@ -73,6 +75,7 @@ pub fn main(args: &[String]) -> Result<i32, String> {
     let mut ptrs: Vec<*const libc::c_char> = argv.iter().map(|c| c.as_ptr()).collect();
     ptrs.push(std::ptr::null());
 
+    if let Some(bytes) = file_size { crate::storage::limit_file_size(bytes)?; }
     let pid = unsafe { libc::fork() };
     if pid < 0 {
         return Err(format!("fork: {}", std::io::Error::last_os_error()));

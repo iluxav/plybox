@@ -15,6 +15,8 @@
 //!      └─ plybox __inner (forwarder 127.0.0.1:3128 → proxy socket, reaper)
 //!         └─ the workload: landlock + no_new_privs + seccomp, then exec
 
+mod byte_budget;
+mod storage;
 mod gvisor;
 mod image;
 mod inner;
@@ -36,6 +38,7 @@ fn usage() -> ! {
          \x20                 [--rootfs host|DIR] [--work DIR] [--workspace-mode overlay|bind]\n\
          \x20                 [--allow HOST[:PORT]]... [--secret NAME[=VALUE]@HOST]... [--secret-file NAME=PATH@HOST]... [--ro-bind HOST:BOX]...\n\
          \x20                 [--env K=V | --env K]... [--mem SIZE] [--pids N] [--cpu CORES]\n\
+         \x20                 [--disk SIZE] [--tmpfs SIZE] [--file-size SIZE] [--bytes-out SIZE] [--bytes-in SIZE]\n\
          \x20                 [--learn [FILE]] [--session DIR | --resume SESSION|--last] [--quiet] -- COMMAND [ARGS...]\n\
          \x20      plybox --resume SESSION|--last [run options] [-- COMMAND [ARGS...]]\n\
          \x20      plybox pull IMAGE               fetch an OCI image (e.g. python:3.13-slim) for --image\n\

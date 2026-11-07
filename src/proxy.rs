@@ -30,6 +30,7 @@ use rustls::{ClientConnection, ServerConnection, Stream};
 use serde_json::json;
 
 use crate::record::Record;
+use crate::byte_budget::{Budget, Metered};
 use crate::secrets::{Secret, Tls};
 
 const MAX_HEAD: usize = 64 * 1024;
@@ -146,6 +147,8 @@ pub fn is_public(ip: IpAddr) -> bool {
 }
 
 pub struct Proxy {
+    upload: Arc<Budget>,
+    download: Arc<Budget>,
     allow: Allow,
     record: Arc<Record>,
     /// host → the secrets that may be substituted toward it. A host here is
@@ -161,9 +164,15 @@ pub struct Proxy {
     /// reach zero (briefly) after the box exits, so the last tunnel's record
     /// line is not lost to process exit.
     active: std::sync::atomic::AtomicUsize,
+    stopping: std::sync::atomic::AtomicBool,
+    listening: std::sync::atomic::AtomicBool,
+    /// The listener's own path, so `drain` can wake a blocked accept by
+    /// connecting to it. Set by `serve` before it first checks `stopping`.
+    wake: std::sync::Mutex<Option<std::path::PathBuf>>,
 }
 
 impl Proxy {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         allow: Allow,
         record: Arc<Record>,
@@ -171,8 +180,12 @@ impl Proxy {
         tls: Option<Arc<Tls>>,
         maps: HashMap<String, SocketAddr>,
         learn: bool,
+        bytes_out: Option<u64>,
+        bytes_in: Option<u64>,
     ) -> Arc<Proxy> {
         Arc::new(Proxy {
+            upload: Budget::new(bytes_out, "out", record.clone()),
+            download: Budget::new(bytes_in, "in", record.clone()),
             allow,
             record,
             secrets,
@@ -180,7 +193,20 @@ impl Proxy {
             maps,
             learn: learn.then(|| std::sync::Mutex::new(std::collections::BTreeSet::new())),
             active: std::sync::atomic::AtomicUsize::new(0),
+            stopping: std::sync::atomic::AtomicBool::new(false),
+            listening: std::sync::atomic::AtomicBool::new(true),
+            wake: std::sync::Mutex::new(None),
         })
+    }
+
+    pub fn record_usage(&self, run: u32) {
+        // Establish whether workers are quiescent BEFORE reading counters.
+        // active's acquire load observes all commits before their decrement.
+        let complete = !self.listening.load(std::sync::atomic::Ordering::SeqCst)
+            && self.active.load(std::sync::atomic::Ordering::SeqCst) == 0;
+        self.record.event("net_usage", json!({ "run": run, "bytes_out": self.upload.used(),
+            "bytes_in": self.download.used(), "unit": "upstream_tcp_payload",
+            "complete": complete }));
     }
 
     /// The destinations learn mode let through, as allow-list entries.
@@ -188,24 +214,52 @@ impl Proxy {
         self.learn.as_ref().map(|m| m.lock().unwrap().iter().cloned().collect()).unwrap_or_default()
     }
 
-    /// Accept forever; one thread per connection. Runs in the supervisor.
+    /// Accept until the workload exits. Closing the listener before the
+    /// final snapshot prevents a queued connection from racing its totals.
+    ///
+    /// accept() blocks: a connection is picked up the moment it arrives, with
+    /// no polling delay. `drain` wakes it by connecting to the listener's own
+    /// path. Ordering: the path is published BEFORE `stopping` is checked,
+    /// and `drain` sets `stopping` BEFORE it reads the path, so either drain
+    /// sees the path and wakes us, or we see `stopping` and never block.
     pub fn serve(self: Arc<Self>, listener: UnixListener) {
-        for conn in listener.incoming() {
-            let Ok(conn) = conn else { continue };
+        use std::sync::atomic::Ordering::SeqCst;
+        let path = listener.local_addr().ok().and_then(|a| a.as_pathname().map(|p| p.to_path_buf()));
+        *self.wake.lock().unwrap() = path;
+        while !self.stopping.load(SeqCst) {
+            let conn = match listener.accept() {
+                Ok((conn, _)) => conn,
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(_) => {
+                    // EMFILE and the like are transient: back off, keep serving.
+                    std::thread::sleep(Duration::from_millis(10));
+                    continue;
+                }
+            };
+            if self.stopping.load(SeqCst) {
+                break; // the wake-up connection from `drain`, or a late one
+            }
             let me = Arc::clone(&self);
-            me.active.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            me.active.fetch_add(1, SeqCst);
             std::thread::spawn(move || {
                 me.handle(conn);
-                me.active.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                me.active.fetch_sub(1, SeqCst);
             });
         }
+        drop(listener);
+        self.listening.store(false, SeqCst);
     }
 
-    /// Wait until no connection is in flight, or `max` has passed.
+    /// Stop accepting, then give existing connections time to finish.
     pub fn drain(&self, max: Duration) {
+        use std::sync::atomic::Ordering::SeqCst;
+        self.stopping.store(true, SeqCst);
+        if let Some(path) = self.wake.lock().unwrap().clone() {
+            let _ = UnixStream::connect(path); // unblocks accept()
+        }
         let t0 = Instant::now();
-        while self.active.load(std::sync::atomic::Ordering::SeqCst) > 0 && t0.elapsed() < max {
-            std::thread::sleep(Duration::from_millis(10));
+        while (self.listening.load(SeqCst) || self.active.load(SeqCst) > 0) && t0.elapsed() < max {
+            std::thread::sleep(Duration::from_millis(1));
         }
     }
 
@@ -270,6 +324,10 @@ impl Proxy {
             }
         }
 
+        if !self.upload.available() || !self.download.available() {
+            return self.refuse(conn, 403, "run network byte budget exhausted", json!({ "host": host, "port": port }));
+        }
+
         // Resolve: a test map, an IP literal (allowed by name above), or DNS
         // filtered to public addresses.
         let addrs: Vec<SocketAddr> = match (&kind, self.maps.get(&host)) {
@@ -302,6 +360,7 @@ impl Proxy {
             return self.refuse(conn, 502, "upstream unreachable", json!({ "host": host, "port": port }));
         };
         let _ = upstream.set_nodelay(true);
+        let upstream = Metered::new(upstream, self.upload.clone(), self.download.clone());
         if conn.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n").is_err() {
             return;
         }
@@ -333,7 +392,7 @@ impl Proxy {
     fn terminate(
         &self,
         mut conn: UnixStream,
-        mut upstream: TcpStream,
+        mut upstream: Metered<TcpStream>,
         host: &str,
         port: u16,
         used: Option<String>,
@@ -375,8 +434,8 @@ impl Proxy {
             Ok(c) => c,
             Err(e) => return fail(format!("tls client: {e}")),
         };
-        let _ = upstream.set_read_timeout(Some(Duration::from_secs(120)));
-        let _ = upstream.set_write_timeout(Some(Duration::from_secs(60)));
+        let _ = upstream.stream.set_read_timeout(Some(Duration::from_secs(120)));
+        let _ = upstream.stream.set_write_timeout(Some(Duration::from_secs(60)));
         let mut up = Stream::new(&mut cconn, &mut upstream);
         if let Err(e) = up.write_all(&head).and_then(|_| up.write_all(&body)).and_then(|_| up.flush()) {
             return fail(format!("upstream write: {e}"));
@@ -393,7 +452,13 @@ impl Proxy {
                         break;
                     }
                 }
-                Err(_) => break, // EOF without close_notify, timeout: the response is over
+                Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                    // Do not turn a budget-truncated response into a clean
+                    // TLS EOF (HTTP bodies may be delimited by EOF).
+                    let _ = client.sock.shutdown(Shutdown::Both);
+                    return fail(format!("upstream read: {e}"));
+                }
+                Err(_) => break, // existing handling of upstream unclean EOF / timeout
             }
         }
         let _ = client.flush();
@@ -575,18 +640,43 @@ fn read_head(conn: &mut UnixStream) -> Option<Vec<u8>> {
 }
 
 /// Copy both ways until both sides are done. Returns (client→upstream, upstream→client) bytes.
-fn tunnel(client: UnixStream, upstream: TcpStream) -> (u64, u64) {
+fn tunnel(client: UnixStream, upstream: Metered<TcpStream>) -> (u64, u64) {
     let mut c2 = match client.try_clone() { Ok(c) => c, Err(_) => return (0, 0) };
-    let mut u2 = match upstream.try_clone() { Ok(u) => u, Err(_) => return (0, 0) };
+    let u2 = match upstream.stream.try_clone() { Ok(u) => u, Err(_) => return (0, 0) };
+    let mut u2 = upstream.with_stream(u2);
     let mut c1 = client;
     let mut u1 = upstream;
     let t = std::thread::spawn(move || {
-        let n = std::io::copy(&mut c1, &mut u1).unwrap_or(0);
-        let _ = u1.shutdown(Shutdown::Write);
+        let (n, failed) = transfer(&mut c1, &mut u1);
+        let _ = u1.stream.shutdown(if failed { Shutdown::Both } else { Shutdown::Write });
+        if failed { let _ = c1.shutdown(Shutdown::Both); }
         n
     });
-    let back = std::io::copy(&mut u2, &mut c2).unwrap_or(0);
-    let _ = c2.shutdown(Shutdown::Write);
-    let fwd = t.join().unwrap_or(0);
-    (fwd, back)
+    let (back, failed) = transfer(&mut u2, &mut c2);
+    let _ = c2.shutdown(if failed { Shutdown::Both } else { Shutdown::Write });
+    if failed { let _ = u2.stream.shutdown(Shutdown::Both); }
+    (t.join().unwrap_or(0), back)
+}
+
+// Unlike io::copy, preserve partial byte counts when a limit ends a stream.
+fn transfer(from: &mut impl Read, to: &mut impl Write) -> (u64, bool) {
+    let mut total = 0;
+    let mut buf = [0; 16384];
+    loop {
+        let n = match from.read(&mut buf) {
+            Ok(0) => return (total, false),
+            Ok(n) => n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => return (total, true),
+        };
+        let mut sent = 0;
+        while sent < n {
+            match to.write(&buf[sent..n]) {
+                Ok(0) => return (total, true),
+                Ok(k) => { sent += k; total += k as u64; }
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(_) => return (total, true),
+            }
+        }
+    }
 }

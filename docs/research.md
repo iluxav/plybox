@@ -157,9 +157,10 @@ gives no signal on this machine; the matrix marks those with `*`.
 - **No IP pinning.** The proxy connects to whatever an allowed name resolves
   to (public addresses only); client TLS validation is what catches a DNS
   compromise.
-- **`ioctl` is allowed for every request code.** Wider than the rest of the
-  allowlist; `--new-session` blocks the classic TIOCSTI trick, but this
-  deserves its own probe and a request-code filter.
+- **Historical gap, now narrowed:** `ioctl` originally allowed every
+  request code. The workload now uses an exact-request filter, tested with
+  harmless denied requests and real terminal I/O. See [current limits](limits.md)
+  for this filter and the storage/traffic controls.
 - **Landlock's in-box effect is unverified.** It is on and works on the host,
   but no probe yet shows it closing a door the mount namespace had not
   already closed.

@@ -3,6 +3,7 @@
 #   make install          build the static binary and copy it to $(BINDIR)
 #   make uninstall        remove it (sessions and images are left alone)
 #   make test             unit tests (seconds)
+#   make test-limits      storage/ioctl/traffic caps (local fixtures, no internet)
 #   make test-sessions    session lifecycle and resume checks (no network, ~20 s)
 #   make test-security    41 attacker probes + workloads against the binary,
 #                         both tiers (network, ~2 min; gVisor tier needs `make tools`)
@@ -18,7 +19,7 @@ BINDIR ?= $(PREFIX)/bin
 TARGET := x86_64-unknown-linux-musl
 BIN    := target/$(TARGET)/release/plybox
 
-.PHONY: build install uninstall test test-sessions test-security test-image test-all tools clean
+.PHONY: build install uninstall test test-limits test-sessions test-security test-image test-all tools clean
 
 build:
 	@rustup target list --installed | grep -qx $(TARGET) || rustup target add $(TARGET)
@@ -42,6 +43,9 @@ uninstall:
 test:
 	cargo test --release
 
+test-limits: build
+	bash tests/limits/run.sh $(abspath $(BIN))
+
 test-sessions: build
 	bash tests/sessions/run.sh $(abspath $(BIN))
 	python3 tests/sessions/resume.py $(abspath $(BIN))
@@ -52,7 +56,7 @@ test-security: build
 test-image: build
 	bash tests/image/run.sh
 
-test-all: test test-sessions test-security test-image
+test-all: test test-limits test-sessions test-security test-image
 
 tools:
 	bash tests/tools/fetch.sh

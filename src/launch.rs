@@ -32,6 +32,7 @@ pub fn run(pol: Policy, cmd: Vec<String>, opts: RunOpts) -> Result<i32, String> 
     let RunOpts { session, resume, quiet, learn } = opts;
     let mut pol = pol;
     pol.absolute_paths()?;
+    let caps = crate::storage::Caps::parse(&pol)?;
     if !["ns", "gvisor"].contains(&pol.isolation.as_str()) || !["overlay", "bind"].contains(&pol.fs.workspace_mode.as_str()) {
         return Err("expected isolation ns|gvisor and workspace_mode overlay|bind".into());
     }
@@ -69,6 +70,7 @@ pub fn run(pol: Policy, cmd: Vec<String>, opts: RunOpts) -> Result<i32, String> 
     if session.starts_with(&work) {
         return Err("the session directory must be outside the workspace".into());
     }
+    if let Some(cap) = caps.disk { crate::storage::verify_volume(&session, cap)?; }
     meta.isolation = pol.isolation.clone();
     meta.cmd = cmd.clone();
     meta.policy = Some(pol.for_resume());
@@ -96,17 +98,22 @@ fn now_ns() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_box(
     mut pol: Policy, cmd: Vec<String>, session: &Path, quiet: bool, learn: Option<Option<PathBuf>>,
     meta: &mut workspace::Meta, record: &Arc<Record>, resuming: bool,
 ) -> Result<i32, String> {
     let learning = learn.is_some();
+    let caps = crate::storage::Caps::parse(&pol)?;
     let gvisor_tier = pol.isolation == "gvisor";
     let engine: PathBuf = if gvisor_tier {
         gvisor::find_runsc(pol.runsc.as_deref())?
     } else {
         which("bwrap").ok_or("bubblewrap (bwrap) not found — plybox uses it for namespaces")?
     };
+    if !gvisor_tier && caps.scratch_mount_bytes().is_some() {
+        require_bwrap_tmpfs_size(&engine)?;
+    }
     let me = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
 
     // An image is the box's root filesystem; pulled once, then cached.
@@ -159,7 +166,7 @@ fn run_box(
         if session.starts_with(&base) {
             let _ = std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o700));
         }
-        let _ = std::fs::set_permissions(&session, std::fs::Permissions::from_mode(0o711));
+        let _ = std::fs::set_permissions(session, std::fs::Permissions::from_mode(0o711));
         let _ = std::fs::set_permissions(session.join("sock"), std::fs::Permissions::from_mode(0o711));
     }
     let sock = session.join("sock/proxy.sock");
@@ -176,11 +183,11 @@ fn run_box(
     let secret_list: Vec<Secret> = secrets::parse(&pol.secret_specs()?)?;
     let tls = if secret_list.is_empty() { None } else { Some(Arc::new(Tls::new(&pol.net.trust_ca)?)) };
     if let Some(t) = &tls {
-        t.write_trust_files(&session, &pol.net.trust_ca)?;
+        t.write_trust_files(session, &pol.net.trust_ca)?;
     }
     let maps = parse_maps(&pol.net.map)?;
 
-    let proxy = Proxy::new(allow, Arc::clone(&record), secrets::by_host(&secret_list), tls.clone(), maps, learning);
+    let proxy = Proxy::new(allow, Arc::clone(record), secrets::by_host(&secret_list), tls.clone(), maps, learning, caps.bytes_out, caps.bytes_in);
     let acceptor = Arc::clone(&proxy);
     std::thread::spawn(move || acceptor.serve(listener));
     if learning {
@@ -195,7 +202,9 @@ fn run_box(
             "workspace_mode": if gvisor_tier && overlay { "read-only (gvisor tier)" } else { pol.fs.workspace_mode.as_str() },
             "allow": pol.net.allow,
             "secrets": secret_list.iter().map(|s| format!("{}@{}", s.name, s.host)).collect::<Vec<_>>(),
-            "limits": { "mem": pol.limits.mem, "pids": pol.limits.pids, "cpu": pol.limits.cpu, "via": enforcer.describe() },
+            "limits": { "mem": pol.limits.mem, "pids": pol.limits.pids, "cpu": pol.limits.cpu, "via": enforcer.describe(),
+                "disk": caps.disk, "tmpfs": caps.tmpfs, "file_size": caps.file_size,
+                "bytes_out": caps.bytes_out, "bytes_in": caps.bytes_in },
             "session": session, "kernel": uname_release(), "resumed": resuming, "run": meta.runs,
         }),
     );
@@ -209,7 +218,7 @@ fn run_box(
             work.display(),
             pol.fs.workspace_mode,
             enforcer.describe(),
-            workspace::session_name(&session)
+            workspace::session_name(session)
         );
     }
     if !enforcer.limits.is_empty() && matches!(enforcer.mode, limits::Mode::None) {
@@ -219,7 +228,7 @@ fn run_box(
     let image_env: &[String] = image.as_ref().map(|i| i.meta.env.as_slice()).unwrap_or(&[]);
     let env = box_env(&pol, &secret_list, tls.is_some(), image_env);
     if own_root {
-        write_accounts(&pol.fs.rootfs, &session)?;
+        write_accounts(&pol.fs.rootfs, session)?;
     }
     let mut inner_argv: Vec<String> = ["/plybox", "__inner", "--proxy-sock", "/run/plybox/sock/proxy.sock"]
         .iter()
@@ -230,14 +239,17 @@ fn run_box(
         // only /work, /tmp, $HOME and /dev, as in host mode.
         inner_argv.push("--ro-root".into());
     }
+    if let Some(bytes) = caps.file_size {
+        inner_argv.extend(["--file-size".into(), bytes.to_string()]);
+    }
     inner_argv.push("--".into());
     inner_argv.extend(cmd.iter().cloned());
     let status = if gvisor_tier {
-        let bundle = gvisor::write_bundle(&pol, &work, &session, &me, &inner_argv, &env, !overlay)?;
-        let mut c = gvisor::command(&engine, &session, &bundle, &session_id);
+        let bundle = gvisor::write_bundle(&pol, &work, session, &me, &inner_argv, &env, !overlay)?;
+        let mut c = gvisor::command(&engine, session, &bundle, &session_id);
         enforcer.wrap(&mut c).status().map_err(|e| format!("runsc: {e}"))?
     } else {
-        let argv = bwrap_argv(&pol, &work, &session, &env, &inner_argv, overlay)?;
+        let argv = bwrap_argv(&pol, &work, session, &env, &inner_argv, overlay)?;
         enforcer.command(&engine, &argv).status().map_err(|e| format!("bwrap: {e}"))?
     };
     let code = status.code().unwrap_or(128 + status_signal(&status));
@@ -245,6 +257,7 @@ fn run_box(
     // The box is gone, so its ends of any tunnels are closed; give the
     // tunnel threads a moment to write their record lines.
     proxy.drain(std::time::Duration::from_secs(2));
+    proxy.record_usage(meta.runs);
     let changed = if overlay && !gvisor_tier {
         workspace::Session { dir: session.to_path_buf(), workspace: work.clone() }.changes().map(|c| c.len()).unwrap_or(0)
     } else {
@@ -282,7 +295,7 @@ fn run_box(
     if !quiet && overlay && !gvisor_tier {
         eprintln!(
             "plybox: box exited {code}; {changed} workspace change(s) held in session {0} — `plybox diff {0}` / `plybox apply {0}`",
-            workspace::session_name(&session)
+            workspace::session_name(session)
         );
     }
     Ok(code)
@@ -404,6 +417,7 @@ fn bwrap_argv(
     overlay: bool,
 ) -> Result<Vec<String>, String> {
     let me = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
+    let caps = crate::storage::Caps::parse(pol)?;
     let mut a: Vec<String> = vec![];
     let mut push = |xs: &[&str]| a.extend(xs.iter().map(|s| s.to_string()));
 
@@ -433,7 +447,18 @@ fn bwrap_argv(
         }
     }
 
-    push(&["--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--tmpfs", "/home", "--dir", "/home/box"]);
+    push(&["--proc", "/proc", "--dev", "/dev"]);
+    if let Some(bytes) = caps.scratch_mount_bytes() {
+        for dest in ["/tmp", "/home", "/dev/shm"] {
+            push(&["--size", &bytes.to_string(), "--tmpfs", dest]);
+        }
+        // /dev/shm remains writable as its own bounded mount. Regular files
+        // elsewhere in /dev must not become an unbounded scratch filesystem.
+        push(&["--remount-ro", "/dev"]);
+    } else {
+        push(&["--tmpfs", "/tmp", "--tmpfs", "/home"]);
+    }
+    push(&["--dir", "/home/box"]);
     if overlay {
         // The real directory is the read-only lower layer; writes land in
         // the session's upper layer, for `plybox diff` / `apply`.
@@ -455,6 +480,11 @@ fn bwrap_argv(
         push(&["--ro-bind", h, b]);
     }
 
+    if caps.tmpfs.is_some() {
+        // Also close writes to the image's temporary root overlay and the
+        // host-mode skeleton, even on kernels without full Landlock support.
+        push(&["--remount-ro", "/"]);
+    }
     push(&["--chdir", "/work", "--cap-drop", "ALL", "--disable-userns", "--clearenv"]);
     for (k, v) in env {
         push(&["--setenv", k, v]);
@@ -468,6 +498,32 @@ fn bwrap_argv(
 /// so they live under the state directory, not the runtime one.
 fn default_session() -> Result<PathBuf, String> {
     workspace::new_session_dir()
+}
+
+/// `--tmpfs` and `--disk` size the box's scratch mounts with bwrap's `--size`,
+/// added in bubblewrap 0.9.0. Older builds (Debian 12: 0.8, Ubuntu 22.04: 0.6)
+/// reject it as an unknown option; say what is wrong instead.
+fn require_bwrap_tmpfs_size(bwrap: &Path) -> Result<(), String> {
+    let out = std::process::Command::new(bwrap)
+        .arg("--version")
+        .output()
+        .map_err(|e| format!("bwrap --version: {e}"))?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let version = text.split_whitespace().last().unwrap_or("");
+    match parse_major_minor(version) {
+        Some(v) if v >= (0, 9) => Ok(()),
+        Some(_) => Err(format!(
+            "--tmpfs and --disk need bubblewrap 0.9 or newer (for its --size option); {} is {version}",
+            bwrap.display()
+        )),
+        // Unrecognised output: let bwrap itself accept or refuse --size.
+        None => Ok(()),
+    }
+}
+
+fn parse_major_minor(version: &str) -> Option<(u32, u32)> {
+    let mut it = version.split('.');
+    Some((it.next()?.parse().ok()?, it.next()?.parse().ok()?))
 }
 
 fn which(name: &str) -> Option<PathBuf> {
@@ -490,4 +546,18 @@ fn uname_release() -> String {
 fn status_signal(status: &std::process::ExitStatus) -> i32 {
     use std::os::unix::process::ExitStatusExt;
     status.signal().unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_major_minor;
+
+    #[test]
+    fn bwrap_versions_compare_numerically() {
+        assert_eq!(parse_major_minor("0.13.1"), Some((0, 13)));
+        assert!(parse_major_minor("0.13.1").unwrap() >= (0, 9), "0.13 must not sort below 0.9");
+        assert!(parse_major_minor("0.8.0").unwrap() < (0, 9));
+        assert!(parse_major_minor("1.0").unwrap() >= (0, 9));
+        assert_eq!(parse_major_minor("bubblewrap"), None);
+    }
 }

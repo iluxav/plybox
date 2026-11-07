@@ -77,6 +77,20 @@ impl Default for Policy {
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct LimitsSpec {
+    /// Persistent session volume capacity, verified before starting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disk: Option<String>,
+    /// Total scratch capacity, split equally across /tmp, /home, /dev/shm.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tmpfs: Option<String>,
+    /// Maximum logical size of any single workload file (RLIMIT_FSIZE).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_size: Option<String>,
+    /// Run-wide upstream TCP payload budgets (including TLS records).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bytes_out: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bytes_in: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mem: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -287,6 +301,7 @@ pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, RunOpts), Stri
     let (mut mem, mut pids, mut cpu) = (None::<String>, None::<u32>, None::<f64>);
     let (mut isolation, mut runsc) = (None::<String>, None::<String>);
     let mut image: Option<String> = None;
+    let mut caps = LimitsSpec::default();
     let mut opts = RunOpts::default();
     let mut resume_target = None;
     let mut cmd: Vec<String> = vec![];
@@ -331,6 +346,11 @@ pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, RunOpts), Stri
             "--isolation" => isolation = Some(need("--isolation")?),
             "--runsc" => runsc = Some(need("--runsc")?),
             "--image" => image = Some(need("--image")?),
+            "--disk" => caps.disk = Some(need("--disk")?),
+            "--tmpfs" => caps.tmpfs = Some(need("--tmpfs")?),
+            "--file-size" => caps.file_size = Some(need("--file-size")?),
+            "--bytes-out" => caps.bytes_out = Some(need("--bytes-out")?),
+            "--bytes-in" => caps.bytes_in = Some(need("--bytes-in")?),
             "--mem" => mem = Some(need("--mem")?),
             "--pids" => pids = Some(need("--pids")?.parse().map_err(|_| "--pids: expected a number")?),
             "--cpu" => cpu = Some(need("--cpu")?.parse().map_err(|_| "--cpu: expected a number of cores")?),
@@ -410,6 +430,12 @@ pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, RunOpts), Stri
     if cpu.is_some() {
         p.limits.cpu = cpu;
     }
+    if caps.disk.is_some() { p.limits.disk = caps.disk; }
+    if caps.tmpfs.is_some() { p.limits.tmpfs = caps.tmpfs; }
+    if caps.file_size.is_some() { p.limits.file_size = caps.file_size; }
+    if caps.bytes_out.is_some() { p.limits.bytes_out = caps.bytes_out; }
+    if caps.bytes_in.is_some() { p.limits.bytes_in = caps.bytes_in; }
+    crate::storage::Caps::parse(&p)?;
     p.env.extend(env);
     for spec in secrets {
         // Never echo the spec back: it may hold the value.
@@ -429,4 +455,25 @@ pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, RunOpts), Stri
         p.secrets.insert(name.to_string(), SecretSpec { only: host.to_string(), value: None, file: Some(path.to_string()) });
     }
     Ok((p, cmd, opts))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn limit_flags_override_toml_and_survive_saved_policy() {
+        let path = std::env::temp_dir().join(format!("plybox-policy-caps-{}.toml", std::process::id()));
+        std::fs::write(&path, "[limits]\nfile_size='8K'\ntmpfs='3M'\nbytes_out='2M'\nbytes_in='1M'\n").unwrap();
+        let args = vec!["--policy".into(), path.to_string_lossy().into_owned(), "--file-size".into(), "4K".into(),
+            "--bytes-in".into(), "0".into(), "--".into(), "true".into()];
+        let result = from_args(&args);
+        let _ = std::fs::remove_file(path);
+        let (p, _, _) = result.unwrap();
+        let saved: Policy = serde_json::from_str(&serde_json::to_string(&p.for_resume()).unwrap()).unwrap();
+        let caps = crate::storage::Caps::parse(&saved).unwrap();
+        assert_eq!(caps.file_size, Some(4096));
+        assert_eq!(caps.tmpfs, Some(3145728));
+        assert_eq!(caps.bytes_out, Some(2097152));
+        assert_eq!(caps.bytes_in, Some(0));
+    }
 }
