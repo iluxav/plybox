@@ -48,9 +48,11 @@ ANTHROPIC_API_KEY=sk-… plybox run --secret ANTHROPIC_API_KEY@api.anthropic.com
   --allow api.anthropic.com --allow registry.npmjs.org --mem 2G --pids 512 \
   -- claude -p "fix the tests"
 plybox diff --last      # what it changed, held in the session
-plybox apply --last     # copy those changes onto your directory
+plybox apply --last     # copy those changes onto your directory; the session keeps only its record
 plybox sessions         # every session: PENDING n / applied / no changes
 plybox discard ID       # drop a session's changes; `plybox sessions --prune` clears applied + empty
+plybox --resume ID      # restart the last command with that session's saved workspace
+plybox run --resume ID -- claude -p "continue fixing the tests"  # or choose a new command
 
 # Don't know what the agent needs to reach? Learn it once, then enforce it.
 plybox run --learn agent.toml -- claude -p "fix the tests"   # allows + records every destination
@@ -75,6 +77,42 @@ pids = 512
 PATH = "/opt/node/latest/bin:/usr/local/bin:/usr/bin:/bin"
 ```
 
+## Resuming a session
+
+`plybox --resume quiet-heron` (also `plybox run --resume quiet-heron`)
+starts a fresh process using the same saved workspace. With no command it
+repeats the last command. Supply `-- COMMAND [ARGS...]` to change it. A
+unique name prefix, a session directory, or `--resume --last` also works.
+
+The effective policy is saved: image, network rules, mounts, environment
+and limits are reused even from another working directory. Normal run
+flags can override it; `--policy FILE` replaces the saved policy. The
+workspace directory, namespace isolation and overlay mode must stay the
+same. Explicit secret values are never saved: supply them again or use
+an environment variable or secret file. File secrets are read again each
+run. Ordinary `--env` values **are** saved; use `--secret` for credentials.
+Learn mode is never automatically resumed; it requires an explicit `--learn`.
+
+Older sessions have no saved policy. Supply it once:
+
+```sh
+plybox --resume rosy-heron --policy ~/Projects/plybox/lab/claude/ply.toml
+```
+
+Only unapplied namespace sessions with an overlay can resume. After
+`apply`, start a new session on the updated project. A session in use
+cannot be resumed, applied or discarded by another command; pruning keeps
+running sessions. The audit record appends each run and its result.
+
+This restores workspace files, including deletions. It does not restore
+processes, `$HOME`, `/tmp`, or an agent's conversation history. The original
+workspace remains the live lower layer, so external edits are visible
+where the saved overlay has not replaced a file. A changed Git HEAD
+produces a warning; uncommitted host edits are not detected or merged.
+
+Run `make lab-sessions` to check the lifecycle and resume with disposable
+workspaces and state directories. These checks make no network requests.
+
 ## Status
 
 v0 complete (slices 1–5). Measured by `lab/v0/run.sh` against 41 attacker
@@ -98,9 +136,8 @@ not followed — the earlier build did follow it, measured), and refuses the
 whole apply if any change would land outside the workspace
 (`lab/sessions/run.sh`, 12 checks).
 
-Known gaps: no `--resume` (a new box cannot continue an ended session's
-copy); a running box does not hold the session lock yet, so `apply` during
-a run is not refused; `plybox diff` lists files, not lines; `ioctl` is allowed for every
+Known gaps: resume restores only workspace files, not processes or agent
+conversation history; `plybox diff` lists files, not lines; `ioctl` is allowed for every
 request code; x86_64 only; private registries (login) are not supported
 yet; under gVisor, an extra `--ro-bind` target missing from an image is
 created inside the cached image; exfiltration *through an allowed host* is

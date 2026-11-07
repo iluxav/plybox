@@ -75,12 +75,16 @@ prepare host
 ( cd "$WORK" && "$PROBE" ) >"$OUT/host.tsv" 2>/dev/null || true
 "$PROBE" --list >"$OUT/probes.tsv"
 
-med() { sort -n | awk '{a[NR]=$1} END{print a[int((NR+1)/2)]}'; }
-t() { local s; s=$(date +%s%N); "$@" >/dev/null 2>&1 || true; echo $(( ($(date +%s%N) - s) / 1000000 )); }
+# A run that fails must not be timed as a fast one: it prints FAIL, and a
+# median with any FAIL in it reads "failed".
+med() { local v; v=$(cat); if grep -q FAIL <<<"$v"; then echo failed; else sort -n <<<"$v" | awk '{a[NR]=$1} END{print a[int((NR+1)/2)]}'; fi; }
+t() { local s; s=$(date +%s%N); if "$@" >/dev/null 2>&1; then echo $(( ($(date +%s%N) - s) / 1000000 )); else echo FAIL; fi; }
+# Sessions must live outside the workspace, so the timed runs get their own.
+LATW="$RUN/latwork"; mkdir -p "$LATW"
 {
   echo "tier	median_ms"
-  echo "plybox run --image (ns)	$(cd "$RUN" && for i in $(seq 10); do t "$PLYBOX" run --quiet --image "$IMAGE" --session "$RUN/lat-$i" --work "$RUN" -- /bin/true; done | med)"
-  [ -x "$RUNSC" ] && echo "plybox run --image --isolation gvisor	$(cd "$RUN" && for i in $(seq 10); do t "$PLYBOX" run --quiet --image "$IMAGE" --isolation gvisor --runsc "$RUNSC" --session "$RUN/glat-$i" --work "$RUN" -- /bin/true; done | med)"
+  echo "plybox run --image (ns)	$(cd "$RUN" && for i in $(seq 10); do t "$PLYBOX" run --quiet --image "$IMAGE" --session "$RUN/lat-$i" --work "$LATW" -- /bin/true; done | med)"
+  [ -x "$RUNSC" ] && echo "plybox run --image --isolation gvisor	$(cd "$RUN" && for i in $(seq 10); do t "$PLYBOX" run --quiet --image "$IMAGE" --isolation gvisor --runsc "$RUNSC" --session "$RUN/glat-$i" --work "$LATW" -- /bin/true; done | med)"
 } > "$OUT/latency.tsv"
 echo "$IMAGE" > "$OUT/image.txt"
 

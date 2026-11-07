@@ -34,6 +34,27 @@ check "diff lists D/M/A" $? "$(tr '\n' ' ' < "$T/diff1.txt")"
 [ "$(cat "$W1/keep.txt")" = edited ] && [ "$(cat "$W1/added.txt")" = new ]; check "apply carries edit + new file" $? "keep.txt=edited added.txt=new"
 "$PLYBOX" sessions | grep -q "$S1.*applied"; check "sessions shows applied" $? "after apply"
 
+# --- 1b. housekeeping: apply keeps only the record; runs leave no run files --
+D1="$XDG_STATE_HOME/plybox/sessions/$S1"
+left="$(ls -A "$D1" | sort | tr '\n' ' ')"
+[ ! -e "$D1/upper" ] && [ ! -e "$D1/work" ] && [ -f "$D1/meta.json" ] && [ -f "$D1/record.jsonl" ]
+check "apply trims the session to meta + record" $? "left: $left"
+echo tampered > "$W1/keep.txt"
+msg="$("$PLYBOX" apply "$S1" 2>&1)"; code=$?
+[ $code -ne 0 ] && echo "$msg" | grep -q 'already applied' && [ "$(cat "$W1/keep.txt")" = tampered ]
+check "second apply refused, workspace untouched" $? "$(echo "$msg" | head -1 | cut -c1-80)"
+out="$("$PLYBOX" diff "$S1" 2>&1)"; code=$?
+[ $code -eq 0 ] && echo "$out" | grep -q 'was applied'
+check "diff of an applied session explains itself" $? "$(echo "$out" | head -1 | cut -c1-80)"
+WC="$T/wsc"; mkdir -p "$WC"
+# A secret makes plybox create a session CA and trust bundle for the run.
+"$PLYBOX" run --quiet --work "$WC" --secret 'TOK=lab-fake-value@example.com' -- sh -c 'echo c > c.txt; test -s /run/plybox/ca.pem && echo yes > had-ca.txt' >/dev/null 2>&1
+SC="$(last)"; DC="$XDG_STATE_HOME/plybox/sessions/$SC"
+[ "$("$PLYBOX" diff "$SC" 2>/dev/null | grep -c had-ca.txt)" = 1 ]; check "a run with a secret had its CA while running" $? "$SC"
+[ ! -e "$DC/ca.pem" ] && [ ! -e "$DC/bundle.pem" ] && [ ! -e "$DC/sock/proxy.sock" ] && [ -d "$DC/upper" ]
+check "run end removes CA, bundle, socket; keeps the copy" $? "left: $(ls -A "$DC" | sort | tr '\n' ' ')"
+"$PLYBOX" discard "$SC" >/dev/null 2>&1
+
 # --- 2. apply never writes through a symlink that leaves the workspace ------
 W2="$T/ws2"; OUT="$T/outside"; mkdir -p "$W2" "$OUT"; echo original > "$OUT/target.txt"
 ln -s "$OUT/target.txt" "$W2/cfg"

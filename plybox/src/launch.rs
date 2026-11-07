@@ -29,8 +29,77 @@ use crate::workspace;
 const PROXY_PORT: u16 = 3128;
 
 pub fn run(pol: Policy, cmd: Vec<String>, opts: RunOpts) -> Result<i32, String> {
-    let RunOpts { session, quiet, learn } = opts;
+    let RunOpts { session, resume, quiet, learn } = opts;
     let mut pol = pol;
+    pol.absolute_paths()?;
+    if !["ns", "gvisor"].contains(&pol.isolation.as_str()) || !["overlay", "bind"].contains(&pol.fs.workspace_mode.as_str()) {
+        return Err("expected isolation ns|gvisor and workspace_mode overlay|bind".into());
+    }
+    let work = pol.fs.workspace.clone();
+    let (session, _guard, mut meta, resuming) = if let Some(resumed) = resume {
+        if pol.isolation != "ns" || pol.fs.workspace_mode != "overlay" {
+            return Err("resume must keep namespace isolation and the overlay workspace".into());
+        }
+        let original = std::fs::canonicalize(&resumed.meta.workspace).map_err(|e| format!("original workspace: {e}"))?;
+        if work != original {
+            return Err(format!("resume must use the original workspace: {}", original.display()));
+        }
+        if resumed.meta.git_head.is_some() && workspace::git_head(&work) != resumed.meta.git_head {
+            eprintln!("plybox: warning: the workspace's git HEAD changed since this session began; saved changes will overlay the current host files");
+        }
+        if !quiet {
+            eprintln!("plybox: resuming session {} (saved workspace files; fresh processes, home and tmp)", workspace::session_name(&resumed.dir));
+        }
+        (resumed.dir, resumed.guard, resumed.meta, true)
+    } else {
+        let session = session.map(Ok).unwrap_or_else(default_session)?;
+        std::fs::create_dir_all(&session).map_err(|e| format!("session {}: {e}", session.display()))?;
+        let session = std::fs::canonicalize(&session).map_err(|e| format!("session: {e}"))?;
+        let guard = workspace::lock(&session)?;
+        if ["meta.json", "record.jsonl", "upper", "work"].iter().any(|name| session.join(name).symlink_metadata().is_ok()) {
+            return Err("session directory already contains a run; use --resume SESSION to continue it".into());
+        }
+        let meta = workspace::Meta {
+            workspace: work.clone(), workspace_mode: pol.fs.workspace_mode.clone(), isolation: pol.isolation.clone(),
+            started: workspace::now(), started_ns: now_ns(), git_head: workspace::git_head(&work),
+            ..Default::default()
+        };
+        (session, guard, meta, false)
+    };
+    if session.starts_with(&work) {
+        return Err("the session directory must be outside the workspace".into());
+    }
+    meta.isolation = pol.isolation.clone();
+    meta.cmd = cmd.clone();
+    meta.policy = Some(pol.for_resume());
+    meta.runs = if resuming { meta.runs.max(1).saturating_add(1) } else { 1 };
+    meta.last_started = workspace::now();
+    meta.last_started_ns = now_ns();
+    meta.ended = None;
+    meta.exit_code = None;
+    workspace::write_meta(&session, &meta)?;
+    let record = Arc::new(Record::open(&session.join("record.jsonl")).map_err(|e| format!("record: {e}"))?);
+    let result = run_box(pol, cmd, &session, quiet, learn, &mut meta, &record, resuming);
+    // The box is gone: its certificates, socket and bundle are of no further
+    // use (every run makes fresh ones). The workspace copy and record stay.
+    workspace::remove_run_files(&session);
+    meta.ended = Some(workspace::now());
+    meta.exit_code = result.as_ref().ok().copied();
+    if result.is_err() {
+        record.event("error", json!({ "run": meta.runs, "phase": "run" }));
+    }
+    workspace::write_meta(&session, &meta)?;
+    result
+}
+
+fn now_ns() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0)
+}
+
+fn run_box(
+    mut pol: Policy, cmd: Vec<String>, session: &Path, quiet: bool, learn: Option<Option<PathBuf>>,
+    meta: &mut workspace::Meta, record: &Arc<Record>, resuming: bool,
+) -> Result<i32, String> {
     let learning = learn.is_some();
     let gvisor_tier = pol.isolation == "gvisor";
     let engine: PathBuf = if gvisor_tier {
@@ -54,10 +123,6 @@ pub fn run(pol: Policy, cmd: Vec<String>, opts: RunOpts) -> Result<i32, String> 
         require_static(&me)?;
     }
     let work = pol.workspace_abs()?;
-    let session = session.map(Ok).unwrap_or_else(default_session)?;
-    std::fs::create_dir_all(&session).map_err(|e| format!("session {}: {e}", session.display()))?;
-    let session = std::fs::canonicalize(&session).map_err(|e| format!("session {}: {e}", session.display()))?;
-    let record = Arc::new(Record::open(&session.join("record.jsonl")).map_err(|e| format!("record: {e}"))?);
     let overlay = pol.fs.workspace_mode == "overlay";
     if overlay && !gvisor_tier {
         std::fs::create_dir_all(session.join("upper")).map_err(|e| format!("upper: {e}"))?;
@@ -66,17 +131,8 @@ pub fn run(pol: Policy, cmd: Vec<String>, opts: RunOpts) -> Result<i32, String> 
     if overlay && gvisor_tier && !quiet {
         eprintln!("plybox: gVisor tier: the workspace is read-only; writes go to $HOME and /tmp and vanish at exit (use --workspace-mode bind to write to the directory)");
     }
-    std::fs::write(
-        session.join("meta.json"),
-        serde_json::to_string_pretty(&json!({
-            "workspace": work, "workspace_mode": pol.fs.workspace_mode, "cmd": cmd,
-            "image": image.as_ref().map(|i| json!({ "ref": i.meta.reference, "digest": i.meta.digest })),
-            "started": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
-            "started_ns": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0),
-        }))
-        .unwrap(),
-    )
-    .map_err(|e| format!("meta.json: {e}"))?;
+    meta.image = image.as_ref().map(|i| json!({ "ref": i.meta.reference, "digest": i.meta.digest }));
+    workspace::write_meta(session, meta)?;
 
     // Limits: a cgroup of our own if the kernel lets us, else systemd-run.
     let lim = Limits {
@@ -140,7 +196,7 @@ pub fn run(pol: Policy, cmd: Vec<String>, opts: RunOpts) -> Result<i32, String> 
             "allow": pol.net.allow,
             "secrets": secret_list.iter().map(|s| format!("{}@{}", s.name, s.host)).collect::<Vec<_>>(),
             "limits": { "mem": pol.limits.mem, "pids": pol.limits.pids, "cpu": pol.limits.cpu, "via": enforcer.describe() },
-            "session": session, "kernel": uname_release(),
+            "session": session, "kernel": uname_release(), "resumed": resuming, "run": meta.runs,
         }),
     );
     if !quiet {
@@ -190,11 +246,11 @@ pub fn run(pol: Policy, cmd: Vec<String>, opts: RunOpts) -> Result<i32, String> 
     // tunnel threads a moment to write their record lines.
     proxy.drain(std::time::Duration::from_secs(2));
     let changed = if overlay && !gvisor_tier {
-        workspace::Session { dir: session.clone(), workspace: work.clone() }.changes().map(|c| c.len()).unwrap_or(0)
+        workspace::Session { dir: session.to_path_buf(), workspace: work.clone() }.changes().map(|c| c.len()).unwrap_or(0)
     } else {
         0
     };
-    record.event("exit", json!({ "code": code, "workspace_changes": changed }));
+    record.event("exit", json!({ "code": code, "workspace_changes": changed, "run": meta.runs }));
 
     // Learn mode: write the policy the run would have needed.
     if let Some(out) = learn {
@@ -388,6 +444,9 @@ fn bwrap_argv(
         push(&["--bind", &work.to_string_lossy(), "/work"]);
     }
     push(&["--ro-bind", &session.to_string_lossy(), "/run/plybox"]);
+    // Bubblewrap keeps its own POSIX lock until the sandbox is gone, even
+    // if this supervisor is terminated while a systemd scope survives it.
+    push(&["--lock-file", "/run/plybox/lock"]);
     push(&["--bind", &session.join("sock").to_string_lossy(), "/run/plybox/sock"]);
     push(&["--ro-bind", &me.to_string_lossy(), "/plybox"]);
     let _ = pol; // rootfs/ro_bind consumed above

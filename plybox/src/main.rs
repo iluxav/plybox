@@ -36,7 +36,8 @@ fn usage() -> ! {
          \x20                 [--rootfs host|DIR] [--work DIR] [--workspace-mode overlay|bind]\n\
          \x20                 [--allow HOST[:PORT]]... [--secret NAME[=VALUE]@HOST]... [--secret-file NAME=PATH@HOST]... [--ro-bind HOST:BOX]...\n\
          \x20                 [--env K=V | --env K]... [--mem SIZE] [--pids N] [--cpu CORES]\n\
-         \x20                 [--learn [FILE]] [--session DIR] [--quiet] -- COMMAND [ARGS...]\n\
+         \x20                 [--learn [FILE]] [--session DIR | --resume SESSION|--last] [--quiet] -- COMMAND [ARGS...]\n\
+         \x20      plybox --resume SESSION|--last [run options] [-- COMMAND [ARGS...]]\n\
          \x20      plybox pull IMAGE               fetch an OCI image (e.g. python:3.13-slim) for --image\n\
          \x20      plybox images                   list pulled images\n\
          \x20      plybox sessions [--prune]       list sessions and their status; --prune removes applied/empty ones\n\
@@ -51,8 +52,9 @@ fn usage() -> ! {
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
-        Some("run") => {
-            let (pol, cmd, opts) = policy::from_args(&args[1..]).unwrap_or_else(|e| {
+        Some("run") | Some("--resume") => {
+            let run_args = if args[0] == "run" { &args[1..] } else { &args[..] };
+            let (pol, cmd, opts) = policy::from_args(run_args).unwrap_or_else(|e| {
                 eprintln!("plybox: {e}");
                 usage()
             });
@@ -124,6 +126,16 @@ fn main() {
             let name = workspace::session_name(&session.dir);
             if name != target {
                 eprintln!("plybox: session {name}");
+            }
+            if which == "diff" {
+                if let Some(when) = workspace::read_meta(&session.dir).ok().and_then(|m| m.applied) {
+                    println!(
+                        "(session {name} was applied {} ago: its changes are in {} now; only its record is kept)",
+                        workspace::ago(when),
+                        session.workspace.display()
+                    );
+                    return;
+                }
             }
             let result = if which == "diff" { session.changes() } else { session.apply() };
             match result {

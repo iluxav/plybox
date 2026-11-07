@@ -4,6 +4,7 @@
 #   make uninstall          remove it (sessions and images are left alone)
 #   make test               unit tests
 #   make lab                the 41-probe suite against the built binary
+#   make lab-sessions       session lifecycle + resume checks (no network)
 #
 # The shipped binary is static musl: it runs as the supervisor on the host
 # and as `plybox __inner` inside any image, so it must not depend on a libc.
@@ -13,7 +14,7 @@ BINDIR ?= $(PREFIX)/bin
 TARGET := x86_64-unknown-linux-musl
 BIN    := plybox/target/$(TARGET)/release/plybox
 
-.PHONY: build install uninstall test lab clean
+.PHONY: build install uninstall test lab lab-sessions clean
 
 build:
 	@rustup target list --installed | grep -qx $(TARGET) || rustup target add $(TARGET)
@@ -39,6 +40,10 @@ test:
 
 lab: build
 	bash lab/v0/run.sh
+
+lab-sessions: build
+	bash lab/sessions/run.sh $(abspath $(BIN))
+	python3 lab/sessions/resume.py $(abspath $(BIN))
 
 clean:
 	cd plybox && cargo clean

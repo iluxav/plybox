@@ -53,6 +53,8 @@ pub struct Meta {
     #[serde(default)]
     pub last_started: u64,
     #[serde(default)]
+    pub last_started_ns: u64,
+    #[serde(default)]
     pub ended: Option<u64>,
     #[serde(default)]
     pub exit_code: Option<i32>,
@@ -67,6 +69,9 @@ pub struct Meta {
     pub git_head: Option<String>,
     #[serde(default)]
     pub image: Option<serde_json::Value>,
+    /// Effective run policy; secret values are removed before persistence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy: Option<crate::policy::Policy>,
 }
 
 pub fn now() -> u64 {
@@ -184,6 +189,7 @@ fn session_dirs() -> Vec<PathBuf> {
 /// upper layer corrupt it, and an `apply` or `discard` under a running box
 /// races it — all three take this lock. Released by the kernel when the
 /// holder exits, however it exits.
+#[derive(Debug)]
 pub struct Lock {
     _file: File,
 }
@@ -191,7 +197,7 @@ pub struct Lock {
 pub fn lock(dir: &Path) -> Result<Lock, String> {
     let path = dir.join("lock");
     let file = OpenOptions::new().create(true).read(true).write(true).truncate(false).open(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 || box_holds_lock(&file)? {
         let holder = std::fs::read_to_string(&path).unwrap_or_default();
         return Err(format!(
             "session {} is in use by a running box{} — wait for it to exit",
@@ -206,7 +212,61 @@ pub fn lock(dir: &Path) -> Result<Lock, String> {
 
 pub fn running(dir: &Path) -> bool {
     let Ok(file) = File::open(dir.join("lock")) else { return false };
-    unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_SH | libc::LOCK_NB) != 0 }
+    (unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_SH | libc::LOCK_NB) != 0 })
+        || box_holds_lock(&file).unwrap_or(true)
+}
+
+/// Bubblewrap's --lock-file holds a POSIX read lock, independent of the
+/// supervisor's flock. Query a conflicting write lock without acquiring it.
+/// This also protects the upper layer if the supervisor dies first.
+fn box_holds_lock(file: &File) -> Result<bool, String> {
+    let mut request: libc::flock = unsafe { std::mem::zeroed() };
+    request.l_type = libc::F_WRLCK as _;
+    request.l_whence = libc::SEEK_SET as _;
+    if unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETLK, &mut request) } == -1 {
+        return Err(format!("cannot check sandbox lock: {}", std::io::Error::last_os_error()));
+    }
+    Ok(request.l_type != libc::F_UNLCK as libc::c_short)
+}
+
+/// Open metadata only after taking the same lock used by run/apply/discard.
+/// Keep it through argument processing and until the new box exits.
+#[derive(Debug)]
+pub struct Resume {
+    pub dir: PathBuf,
+    pub meta: Meta,
+    pub guard: Lock,
+}
+
+impl Resume {
+    pub fn open(target: &str) -> Result<Self, String> {
+        let dir = std::fs::canonicalize(resolve(target)?).map_err(|e| format!("session: {e}"))?;
+        let guard = lock(&dir)?;
+        let meta = read_meta(&dir)?;
+        if meta.applied.is_some() {
+            return Err("this session was already applied; start a new run on the updated workspace".into());
+        }
+        if meta.workspace_mode != "overlay" || (!meta.isolation.is_empty() && meta.isolation != "ns") {
+            return Err("resume requires a namespace session with an overlay workspace; bind and gVisor sessions have no saved workspace copy".into());
+        }
+        // Legacy metadata did not record isolation. Existing upper/work
+        // directories distinguish real namespace overlays from gVisor runs.
+        for name in ["upper", "work"] {
+            if !std::fs::symlink_metadata(dir.join(name)).map(|m| m.is_dir()).unwrap_or(false) {
+                return Err(format!("cannot resume: missing or invalid {name} directory"));
+            }
+        }
+        if !dir.join("record.jsonl").is_file() {
+            return Err("cannot resume: missing session record".into());
+        }
+        Ok(Self { dir, meta, guard })
+    }
+}
+
+pub fn git_head(workspace: &Path) -> Option<String> {
+    let output = std::process::Command::new("git").arg("-C").arg(workspace)
+        .args(["rev-parse", "--verify", "HEAD"]).output().ok()?;
+    output.status.success().then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 // ------------------------------------------------------------- the list
@@ -228,7 +288,7 @@ impl Info {
     /// some filesystems (tmpfs) do not report.
     pub fn order(&self) -> (u64, u128) {
         let secs = self.meta.last_started.max(self.meta.started).saturating_mul(1_000_000_000);
-        (self.meta.started_ns.max(secs), self.created_ns)
+        (self.meta.last_started_ns.max(self.meta.started_ns).max(secs), self.created_ns)
     }
 }
 
@@ -285,6 +345,13 @@ pub fn discard(dir: &Path) -> Result<(), String> {
         return Err(format!("{} is not a plybox session", dir.display()));
     }
     let _guard = lock(dir)?; // fails if a box is running on it
+    discard_locked(dir)
+}
+
+fn discard_locked(dir: &Path) -> Result<(), String> {
+    if !(dir.join("meta.json").is_file() && dir.join("record.jsonl").is_file()) {
+        return Err(format!("{} is not a plybox session", dir.display()));
+    }
     make_removable(dir);
     std::fs::remove_dir_all(dir).map_err(|e| format!("remove {}: {e}", dir.display()))
 }
@@ -297,8 +364,19 @@ pub fn prune() -> Vec<(String, String)> {
         if i.running || i.pending() {
             continue;
         }
+        let Ok(_guard) = lock(&i.dir) else { continue };
+        // A resume may have finished since list(): recheck under the lock
+        // before deleting what could now be a pending workspace.
+        let Ok(meta) = read_meta(&i.dir) else { continue };
+        if meta.applied.is_none() && meta.workspace_mode == "overlay" && i.dir.join("upper").is_dir() {
+            let session = Session { dir: i.dir.clone(), workspace: meta.workspace };
+            match session.changes() {
+                Ok(changes) if changes.is_empty() => {}
+                _ => continue, // never prune when changes cannot be read
+            }
+        }
         let why = i.status();
-        if discard(&i.dir).is_ok() {
+        if discard_locked(&i.dir).is_ok() {
             removed.push((i.id, why));
         }
     }
@@ -307,6 +385,47 @@ pub fn prune() -> Vec<(String, String)> {
 
 /// The overlay's scratch dir (`work/work`) is created mode 000 by the
 /// kernel; restore owner rights so the tree can be removed.
+/// Files a session needs only while a box runs: the session CA and the
+/// trust bundle built on it (made fresh every run), the proxy socket, image
+/// account files, gVisor's bundle and state. Removed when each run ends.
+const RUN_ONLY: &[&str] = &["ca.pem", "bundle.pem", "passwd", "group", "sock/proxy.sock", "bundle", "runsc"];
+
+/// What `apply` keeps of a session: its identity and its audit trail. The
+/// copied files are in the workspace now, so the rest is dropped.
+const KEEP_AFTER_APPLY: &[&str] = &["meta.json", "record.jsonl", "learned.toml", "lock"];
+
+fn remove_entry(path: &Path) -> std::io::Result<()> {
+    match std::fs::symlink_metadata(path) {
+        Ok(md) if md.is_dir() => {
+            make_removable(path);
+            std::fs::remove_dir_all(path)
+        }
+        Ok(_) => std::fs::remove_file(path),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Best effort: a file left behind is untidy, not unsafe.
+pub fn remove_run_files(dir: &Path) {
+    for name in RUN_ONLY {
+        let _ = remove_entry(&dir.join(name));
+    }
+}
+
+/// After `apply`: everything except what `KEEP_AFTER_APPLY` names.
+fn trim_applied(dir: &Path) -> Result<(), String> {
+    let entries = std::fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    for e in entries.flatten() {
+        let name = e.file_name();
+        if KEEP_AFTER_APPLY.iter().any(|k| name == std::ffi::OsStr::new(k)) {
+            continue;
+        }
+        remove_entry(&e.path()).map_err(|err| format!("{}: {err}", e.path().display()))?;
+    }
+    Ok(())
+}
+
 fn make_removable(dir: &Path) {
     use std::os::unix::fs::PermissionsExt;
     if let Ok(md) = std::fs::symlink_metadata(dir) {
@@ -362,6 +481,14 @@ impl Session {
     /// Checked for every change before the first one is applied.
     pub fn apply(&self) -> Result<Vec<Change>, String> {
         let _guard = lock(&self.dir)?;
+        if let Some(when) = read_meta(&self.dir)?.applied {
+            return Err(format!(
+                "session {} was already applied {} ago; its changes are in {} now",
+                session_name(&self.dir),
+                ago(when),
+                self.workspace.display()
+            ));
+        }
         let root = std::fs::canonicalize(&self.workspace).map_err(|e| format!("workspace {}: {e}", self.workspace.display()))?;
         let changes = self.changes()?;
         for c in &changes {
@@ -408,7 +535,24 @@ impl Session {
         let mut meta = read_meta(&self.dir)?;
         meta.applied = Some(now());
         write_meta(&self.dir, &meta)?;
+        // Marked applied first, so a failed tidy-up can never lead to the
+        // same changes being applied twice.
+        if let Err(e) = trim_applied(&self.dir) {
+            eprintln!("plybox: warning: applied, but the session could not be tidied: {e}");
+        }
         Ok(changes)
+    }
+}
+
+/// "5m", "3h", "2d".
+pub fn ago(when: u64) -> String {
+    let s = now().saturating_sub(when);
+    if s < 3600 {
+        format!("{}m", s / 60)
+    } else if s < 86400 {
+        format!("{}h", s / 3600)
+    } else {
+        format!("{}d", s / 86400)
     }
 }
 

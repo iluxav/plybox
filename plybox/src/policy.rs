@@ -153,9 +153,10 @@ pub struct Net {
 }
 
 /// What `run` was asked to do beyond the policy.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct RunOpts {
     pub session: Option<PathBuf>,
+    pub resume: Option<crate::workspace::Resume>,
     pub quiet: bool,
     /// Learn mode: allow every public destination, record each, and write
     /// the resulting policy here at exit (default `<session>/learned.toml`).
@@ -163,6 +164,55 @@ pub struct RunOpts {
 }
 
 impl Policy {
+    /// Resolve host paths now, so a resumed run works from another cwd.
+    pub fn absolute_paths(&mut self) -> Result<(), String> {
+        fn absolute(path: &str) -> Result<String, String> {
+            let p = match path.strip_prefix("~/") {
+                Some(rest) => PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(rest),
+                None => PathBuf::from(path),
+            };
+            // Anchor relative paths without resolving symlinks: secret files
+            // may rotate by replacing a symlink between runs.
+            let p = if p.is_absolute() { p } else {
+                std::env::current_dir().map_err(|e| format!("current directory: {e}"))?.join(p)
+            };
+            Ok(p.to_string_lossy().into_owned())
+        }
+        self.fs.workspace = self.workspace_abs()?;
+        if self.image.is_none() && self.fs.rootfs != "host" {
+            self.fs.rootfs = absolute(&self.fs.rootfs)?;
+        }
+        for pair in &mut self.fs.ro_bind {
+            let (host, dest) = pair.split_once(':').ok_or("ro_bind: expected HOST:BOX")?;
+            *pair = format!("{}:{dest}", absolute(host)?);
+        }
+        for path in &mut self.net.trust_ca {
+            *path = absolute(path)?;
+        }
+        for spec in self.secrets.values_mut() {
+            if let Some(path) = &mut spec.file {
+                *path = absolute(path)?;
+            }
+        }
+        if let Some(path) = &mut self.runsc {
+            *path = absolute(path)?;
+        }
+        Ok(())
+    }
+
+    /// Persist references, never secret values. Literal secrets must be
+    /// supplied again on resume (or provided via the named environment var).
+    pub fn for_resume(&self) -> Self {
+        let mut p = self.clone();
+        for (name, spec) in &mut p.secrets {
+            if spec.value.take().is_some() {
+                spec.file = None; // a literal took precedence over this file
+            }
+            p.env.remove(name); // the runtime replaces this with a placeholder
+        }
+        p
+    }
+
     /// The policy as a file: secrets keep only their host (never a value).
     pub fn to_toml(&self) -> String {
         let mut p = self.clone();
@@ -238,7 +288,9 @@ pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, RunOpts), Stri
     let (mut isolation, mut runsc) = (None::<String>, None::<String>);
     let mut image: Option<String> = None;
     let mut opts = RunOpts::default();
+    let mut resume_target = None;
     let mut cmd: Vec<String> = vec![];
+    let mut command_given = false;
 
     let mut it = args.iter().peekable();
     while let Some(a) = it.next() {
@@ -283,13 +335,38 @@ pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, RunOpts), Stri
             "--pids" => pids = Some(need("--pids")?.parse().map_err(|_| "--pids: expected a number")?),
             "--cpu" => cpu = Some(need("--cpu")?.parse().map_err(|_| "--cpu: expected a number of cores")?),
             "--session" => opts.session = Some(PathBuf::from(need("--session")?)),
+            "--resume" => {
+                if resume_target.is_some() {
+                    return Err("--resume may only be supplied once".into());
+                }
+                resume_target = Some(need("--resume")?);
+            }
             "--quiet" => opts.quiet = true,
             "--" => {
+                command_given = true;
                 cmd = it.cloned().collect();
                 break;
             }
             other => return Err(format!("unknown flag {other}")),
         }
+    }
+    if let Some(target) = resume_target {
+        if opts.session.is_some() {
+            return Err("--resume and --session cannot be combined".into());
+        }
+        let resumed = crate::workspace::Resume::open(&target)?;
+        if pol.is_none() {
+            pol = Some(resumed.meta.policy.clone().ok_or(
+                "this older session has no saved policy; supply --policy FILE when resuming it (the policy will then be saved)"
+            )?);
+        }
+        if work.is_none() && pol.as_ref().unwrap().fs.workspace == Path::new(".") {
+            pol.as_mut().unwrap().fs.workspace = resumed.meta.workspace.clone();
+        }
+        if !command_given {
+            cmd = resumed.meta.cmd.clone();
+        }
+        opts.resume = Some(resumed);
     }
     if cmd.is_empty() {
         return Err("nothing to run: expected `-- COMMAND [ARGS...]`".into());
