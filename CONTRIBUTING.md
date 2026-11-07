@@ -22,7 +22,7 @@ itself inside the image, so it must not depend on the image's libc.
 | Command | What it measures | Time |
 |---|---|---|
 | `make test` | unit tests, including the real seccomp filter | seconds |
-| `make test-policy` | a hostile policy or flags can't weaken the box; operator rules | seconds |
+| `make test-policy` | hostile policies, operator rules; gVisor ownership, writes and limits when runsc is installed | seconds |
 | `make test-sessions` | session lifecycle, `apply` safety, resume (35 checks) | ~20 s |
 | `make test-limits` | storage, ioctl and traffic caps (local fixtures, no internet) | under a minute |
 | `make test-security` | 41 attacker probes + real workloads, both tiers (network) | ~2 min |
@@ -31,6 +31,12 @@ itself inside the image, so it must not depend on the image's libc.
 
 `make tools` fetches and verifies gVisor's `runsc` into `tests/tools/` for
 the gVisor-tier checks. Suites that need it skip that tier without it.
+The gVisor checks also need util-linux's `unshare`. CI installs runsc so
+these checks run there too. To repeat the ownership checks with an image:
+
+```sh
+python3 tests/policy/gvisor.py target/x86_64-unknown-linux-musl/release/plybox tests/tools/runsc --image python:3.13-slim
+```
 
 The suites need a Linux machine with bubblewrap and unprivileged user
 namespaces. `test-security` and `test-image` also use `socat` and network

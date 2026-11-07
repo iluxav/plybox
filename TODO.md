@@ -53,22 +53,6 @@ top, destinations must be plain and may not cover `/plybox`/`/run/plybox`
 4. A hosting service without an operator file must still generate the full
    policy itself and never pass user input through as plybox flags.
 
-## Bug: the gVisor tier can't write to the workspace (hand to another model)
-
-Measured 2026-11-07: with `--isolation gvisor --workspace-mode bind`,
-`touch /work/x` fails with `Permission denied`. Inside the box `/work`
-shows as `root root 0755` while the workload runs as the invoking uid
-(1000). The README used to promise bind mode writes; it now says writes
-don't work in this tier. Claude was stopped by a safety classifier when
-starting this fix, so it goes to another model; Claude can review it.
-Done when a check in `tests/policy/` or `tests/sessions/` writes a file
-in gVisor bind mode and finds it on the host, and the 41-probe suite
-still shows 0 open doors in the gVisor tier.
-
-Measured cost of the tier on this machine (12 cores, writes in tmpfs):
-`npm ci` of 6,886 files 0.56 s (ns) vs 1.03 s (gVisor); a debug
-`cargo build` of plybox 6.3 s (host and ns) vs 8.8 s (gVisor).
-
 ## Later: SDK — run plybox from code
 
 A thin wrapper around the CLI, not an embedded library: plybox must stay its

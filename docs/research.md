@@ -270,3 +270,38 @@ cases: a repo symlink pointing out of the workspace is replaced, not written
 through — the previous build (b85fb87) wrote through it and overwrote the
 outside file, measured — and a tampered upper layer that would write under a
 directory symlink pointing out is refused before anything is applied.
+
+## 2026-11-07: gVisor bind workspace ownership
+
+The old `runsc --rootless` invocation mapped the host caller to UID/GID 0,
+while the OCI process used the caller's original IDs. A caller-owned 0755
+workspace appeared root-owned and `touch /work/x` failed; owner-only files
+were unreadable too.
+
+The fix enters an outer user namespace using util-linux `unshare` with
+`--user --map-current-user --keep-caps --net` and supplies matching
+single-ID mappings in the OCI bundle. Setup capabilities belong to the runtime's user namespace; the
+workload still has empty capability sets and no_new_privs. Retaining a
+non-root workload matters for RLIMIT_NPROC. See the upstream
+[discussion of preserving the caller's identity](https://github.com/google/gvisor/issues/13564)
+and [rootless behavior](https://gvisor.dev/docs/user_guide/rootless/).
+
+`tests/policy/gvisor.py` reproduces the old failure and checks bind edits,
+private files, unchanged host permissions, read-only mounts, proxy access,
+workload restrictions and a bounded process-limit test. The default
+gVisor workspace remains read-only; staged edits are still unsupported.
+The identity fix also removes the need for world-connectable proxy sockets.
+
+Earlier throughput measurements on this machine (12 cores, writes in tmpfs):
+`npm ci` of 6,886 files took 0.56 s (namespaces) versus 1.03 s (gVisor);
+a debug `cargo build` of plybox took 6.3 s (host/namespaces) versus 8.8 s
+(gVisor). These are historical measurements, not a benchmark of this fix.
+
+Validation on runsc release-20261102.0: ownership checks pass with host
+Python and `python:3.13-slim`; 26 unit, 35 policy, 26 session, 35 resume,
+and 13 limits checks pass. The security suite used a synthetic home and
+credentials: 40/41 probes blocked in both tiers, with the SSH-agent probe
+unavailable (no SSH agent); all seven network/secret workloads pass in each
+tier. The measured startup median was 21 ms for gVisor and 4 ms for the
+namespace tier (10 runs each). These probes are regression checks, not a
+proof of isolation against every possible attack.

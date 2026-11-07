@@ -483,13 +483,17 @@ Found a hole? Please report it privately; see [SECURITY.md](SECURITY.md).
 ## Requirements
 
 - Linux on x86_64, with unprivileged user namespaces (kernel 5.11+).
-- [bubblewrap](https://github.com/containers/bubblewrap) 0.11 or newer: the
+- For the default namespace tier:
+  [bubblewrap](https://github.com/containers/bubblewrap) 0.11 or newer. The
   workspace copy and `--image` use its overlay mounts. See
   [Install](#install) for Ubuntu 24.04 and Debian 12.
 - For memory, process and CPU limits: cgroup v2, plus a user systemd session
   on desktops.
 - For `--isolation gvisor`: gVisor's
-  [`runsc`](https://gvisor.dev/docs/user_guide/install/).
+  [`runsc`](https://gvisor.dev/docs/user_guide/install/) and `unshare` from
+  util-linux (with `--map-current-user` and `--keep-caps` support).
+  This tier does not use bubblewrap. The workload keeps your user ID,
+  so bind-mode files remain yours on the host.
 - Optional: Landlock (kernel 5.13+). plybox applies it when the kernel has it.
 
 So far plybox has been tested on Arch-based Linux (kernel 6.x–7.x). If
@@ -502,9 +506,10 @@ through AppArmor.
 - x86_64 only, for now.
 - Private registries (registry login) aren't supported yet.
 - `--resume` restores files, not processes or an agent's conversation.
-- In the gVisor tier the box can't write to the workspace yet, in either
-  mode: writes go to `$HOME` and `/tmp` and vanish at exit. Use the
-  namespace tier when the agent must change files. `--tmpfs` and `--disk`
+- In the gVisor tier the default workspace is read-only. Add
+  `--workspace-mode bind` to write directly into your folder; those edits
+  take effect immediately, without a review/apply step. Writes to `$HOME`
+  and `/tmp` vanish at exit. Staged workspace edits, `--tmpfs` and `--disk`
   are namespace-tier only.
 
 ## FAQ

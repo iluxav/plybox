@@ -148,6 +148,9 @@ if [ -x "$RUNSC" ]; then
   msg="$(OPF="$OPD/gvisor.toml" opr --work "$OKW" --session "$S" --isolation ns -- true 2>&1)"; code=$?
   [ $code -eq 0 ] && start_of "$S" | grep -q '"isolation":"gvisor"'
   check "operator forces the gVisor tier over the policy's ns" $? "exit $code $(echo "$msg" | head -1 | cut -c1-60)"
+
+  python3 "$ROOT/tests/policy/gvisor.py" "$PLYBOX" "$RUNSC"
+  check "gVisor workspace, identity, proxy and process limits" $? "local regression suite"
 fi
 
 echo "scratch dir: $T"

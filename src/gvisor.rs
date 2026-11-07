@@ -4,7 +4,7 @@
 //! real one. The lab measured it closing six of the eight kernel doors by
 //! not implementing them, with the remaining ones closed by our seccomp
 //! allowlist, which applies inside it too. It costs ~10 ms per start and
-//! some syscall throughput, needs no root (`--rootless`) and no KVM.
+//! some syscall throughput, needs no root and no KVM.
 //!
 //! The lab also showed that `runsc do`'s convenience mount policy exposes
 //! the host filesystem and every unix socket. So plybox writes a real OCI
@@ -160,7 +160,13 @@ pub fn write_bundle(
         "root": { "path": rootfs, "readonly": !host_root },
         "mounts": mounts,
         "linux": {
+            // The caller-preserving outer user namespace (see command) lets
+            // runsc create this second namespace without mapping us to root.
+            // The gofer and guest agree on ownership of bind-mounted files.
+            "uidMappings": [{ "containerID": uid, "hostID": uid, "size": 1 }],
+            "gidMappings": [{ "containerID": gid, "hostID": gid, "size": 1 }],
             "namespaces": [
+                { "type": "user" },
                 { "type": "pid" }, { "type": "network" }, { "type": "ipc" }, { "type": "uts" }, { "type": "mount" }
             ]
         }
@@ -175,8 +181,16 @@ pub fn command(runsc: &Path, session: &Path, bundle: &Bundle, id: &str) -> Comma
     // Which host unix-socket operations the sandbox may perform. Only the
     // proxy's socket directory is mounted, so this governs one socket.
     let host_uds = std::env::var("PLYBOX_GVISOR_HOST_UDS").unwrap_or_else(|_| "open".into());
-    let mut c = Command::new(runsc);
-    c.arg("--rootless")
+    // `runsc --rootless` alone maps the caller to UID/GID 0. Bind mounts
+    // then look root-owned to our non-root workload. Enter a user namespace
+    // with the caller's IDs first, retaining capabilities only for runsc's
+    // setup. The OCI process still has empty capability sets. Keeping the
+    // guest non-root also preserves RLIMIT_NPROC enforcement.
+    // The outer network namespace isolates host abstract UNIX sockets too.
+    let mut c = Command::new("unshare");
+    c.args(["--user", "--map-current-user", "--keep-caps", "--net", "--"])
+        .arg(runsc)
+        .arg("--rootless")
         .arg("--network=none")
         .arg(format!("--host-uds={host_uds}"))
         .arg("--ignore-cgroups")

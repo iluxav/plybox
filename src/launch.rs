@@ -187,19 +187,16 @@ fn run_box(
     // the session the box may write to: connecting to a unix socket needs
     // write permission on it, and gVisor refuses that on a read-only mount.
     std::fs::create_dir_all(session.join("sock")).map_err(|e| format!("sock dir: {e}"))?;
-    // Permissions, host side: the sessions base is 0700, so no other user on
-    // the host reaches any session. Inside the gVisor tier our files show
-    // up as root's while the workload runs as our uid, so the session dir is
-    // 0711 (traverse, no listing) and the socket is world-connectable — the
-    // 0700 base is what actually guards them.
+    // Both tiers preserve the caller's UID/GID, so session files and the
+    // proxy socket can stay owner-only, including custom --session paths.
     {
         use std::os::unix::fs::PermissionsExt;
         let base = workspace::sessions_base();
         if session.starts_with(&base) {
             let _ = std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o700));
         }
-        let _ = std::fs::set_permissions(session, std::fs::Permissions::from_mode(0o711));
-        let _ = std::fs::set_permissions(session.join("sock"), std::fs::Permissions::from_mode(0o711));
+        std::fs::set_permissions(session, std::fs::Permissions::from_mode(0o700)).map_err(|e| format!("session permissions: {e}"))?;
+        std::fs::set_permissions(session.join("sock"), std::fs::Permissions::from_mode(0o700)).map_err(|e| format!("socket directory permissions: {e}"))?;
     }
     let sock = session.join("sock/proxy.sock");
     let _ = std::fs::remove_file(&sock);
@@ -208,7 +205,7 @@ fn run_box(
     let (listener, _sock_dir) = bind_proxy_socket(&session.join("sock"), &sock)?;
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&sock, std::fs::Permissions::from_mode(0o777));
+        std::fs::set_permissions(&sock, std::fs::Permissions::from_mode(0o600)).map_err(|e| format!("proxy socket permissions: {e}"))?;
     }
     let allow = Allow::parse(&pol.net.allow)?;
 
@@ -292,7 +289,7 @@ fn run_box(
     let status = if gvisor_tier {
         let bundle = gvisor::write_bundle(&pol, &work, session, &me, &inner_argv, &env, !overlay)?;
         let mut c = gvisor::command(&engine, session, &bundle, &session_id);
-        enforcer.wrap(&mut c).status().map_err(|e| format!("runsc: {e}"))?
+        enforcer.wrap(&mut c).status().map_err(|e| format!("gVisor (requires unshare and runsc): {e}"))?
     } else {
         let argv = bwrap_argv(&pol, &work, session, &env, &inner_argv, overlay)?;
         enforcer.command(&engine, &argv).status().map_err(|e| format!("bwrap: {e}"))?
