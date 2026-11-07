@@ -1,0 +1,2751 @@
+{
+  "machine": {
+    "utc": "20261107T223654Z",
+    "commit": "8b480a7023b445cfbf879f57f3f884f5ff184b63",
+    "binary_sha512": "78b3f459db74c975473b539aca3bd8cbb7e12530bcd89331d6815fe006111f433293e1ccf13b51bbfa36d5d33e23fe0897d92b76e5c5dcdeed9ff789cdcd0752",
+    "version": "plybox 0.0.1\ngVisor release-20261102.0 (embedded)",
+    "platform": "systrap (runsc default; no platform override)",
+    "kernel": {
+      "system": "Linux",
+      "node": "omarchy",
+      "release": "7.2.15-1-omarchy",
+      "version": "#1 SMP PREEMPT_DYNAMIC Mon, 02 Nov 2026 10:32:17 +0000",
+      "machine": "x86_64",
+      "processor": ""
+    },
+    "lscpu": {
+      "lscpu": [
+        {
+          "field": "Architecture:",
+          "data": "x86_64"
+        },
+        {
+          "field": "CPU op-mode(s):",
+          "data": "32-bit, 64-bit"
+        },
+        {
+          "field": "Address sizes:",
+          "data": "48 bits physical, 48 bits virtual"
+        },
+        {
+          "field": "Byte Order:",
+          "data": "Little Endian"
+        },
+        {
+          "field": "CPU(s):",
+          "data": "12"
+        },
+        {
+          "field": "On-line CPU(s) list:",
+          "data": "0-11"
+        },
+        {
+          "field": "Vendor ID:",
+          "data": "AuthenticAMD"
+        },
+        {
+          "field": "Model name:",
+          "data": "AMD Ryzen 5 9600X 6-Core Processor"
+        },
+        {
+          "field": "CPU family:",
+          "data": "26"
+        },
+        {
+          "field": "Model:",
+          "data": "68"
+        },
+        {
+          "field": "Thread(s) per core:",
+          "data": "2"
+        },
+        {
+          "field": "Core(s) per socket:",
+          "data": "6"
+        },
+        {
+          "field": "Socket(s):",
+          "data": "1"
+        },
+        {
+          "field": "Stepping:",
+          "data": "0"
+        },
+        {
+          "field": "Microcode version:",
+          "data": "0xb404035"
+        },
+        {
+          "field": "Frequency boost:",
+          "data": "enabled"
+        },
+        {
+          "field": "CPU(s) scaling MHz:",
+          "data": "97%"
+        },
+        {
+          "field": "CPU max MHz:",
+          "data": "5486.4409"
+        },
+        {
+          "field": "CPU min MHz:",
+          "data": "627.9670"
+        },
+        {
+          "field": "BogoMIPS:",
+          "data": "7799.29"
+        },
+        {
+          "field": "Flags:",
+          "data": "fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good amd_lbr_v2 nopl xtopology nonstop_tsc cpuid extd_apicid aperfmperf rapl pni pclmulqdq monitor ssse3 fma cx16 sse4_1 sse4_2 movbe popcnt aes xsave avx f16c rdrand lahf_lm cmp_legacy svm extapic cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw ibs skinit wdt tce topoext perfctr_core perfctr_nb bpext perfctr_llc mwaitx cpuid_fault cpb cat_l3 cdp_l3 hw_pstate ssbd mba perfmon_v2 ibrs ibpb stibp ibrs_enhanced vmmcall fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid cqm rdt_a avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local user_shstk avx_vnni avx512_bf16 clzero irperf xsaveerptr rdpru wbnoinvd cppc arat npt lbrv svm_lock nrip_save tsc_scale vmcb_clean flushbyasid decodeassists pausefilter pfthreshold avic v_vmsave_vmload vgif x2avic v_spec_ctrl vnmi avx512vbmi umip pku ospke avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq rdpid bus_lock_detect movdiri movdir64b overflow_recov succor smca fsrm avx512_vp2intersect flush_l1d amd_lbr_pmc_freeze"
+        },
+        {
+          "field": "Virtualization:",
+          "data": "AMD-V"
+        },
+        {
+          "field": "L1d cache:",
+          "data": "288 KiB (6 instances)"
+        },
+        {
+          "field": "L1i cache:",
+          "data": "192 KiB (6 instances)"
+        },
+        {
+          "field": "L2 cache:",
+          "data": "6 MiB (6 instances)"
+        },
+        {
+          "field": "L3 cache:",
+          "data": "32 MiB (1 instance)"
+        },
+        {
+          "field": "NUMA node(s):",
+          "data": "1"
+        },
+        {
+          "field": "NUMA node0 CPU(s):",
+          "data": "0-11"
+        },
+        {
+          "field": "Vulnerability Gather data sampling:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Ghostwrite:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Indirect target selection:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Itlb multihit:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability L1tf:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Mds:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Meltdown:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Mmio stale data:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Old microcode:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Reg file data sampling:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Retbleed:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Spec rstack overflow:",
+          "data": "Mitigation; IBPB on VMEXIT only"
+        },
+        {
+          "field": "Vulnerability Spec store bypass:",
+          "data": "Mitigation; Speculative Store Bypass disabled via prctl"
+        },
+        {
+          "field": "Vulnerability Spectre v1:",
+          "data": "Mitigation; usercopy/swapgs barriers and __user pointer sanitization"
+        },
+        {
+          "field": "Vulnerability Spectre v2:",
+          "data": "Mitigation; Enhanced / Automatic IBRS; IBPB conditional; STIBP always-on; PBRSB-eIBRS Not affected; BHI Not affected"
+        },
+        {
+          "field": "Vulnerability Srbds:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Tsa:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Tsx async abort:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Vmscape:",
+          "data": "Mitigation; IBPB on VMEXIT"
+        }
+      ]
+    },
+    "meminfo": "MemTotal:       63415596 kB\nMemFree:        15401132 kB\nMemAvailable:   40540896 kB\nBuffers:            3716 kB\nCached:         30740944 kB\nSwapCached:            0 kB\nActive:         14767020 kB\nInactive:       26413668 kB\nActive(anon):   14766952 kB\nInactive(anon):        0 kB\nActive(file):         68 kB\nInactive(file): 26413668 kB\nUnevictable:         168 kB\nMlocked:             168 kB\nSwapTotal:      126835128 kB\nSwapFree:       126835128 kB\nZswap:                 0 kB\nZswapped:              0 kB\nDirty:              2424 kB\nWriteback:             0 kB\nAnonPages:      10025180 kB\nMapped:          4021848 kB\nShmem:           4331312 kB\nKReclaimable:    2355784 kB\nSlab:            2270868 kB\nSReclaimable:    1648636 kB\nSUnreclaim:       622232 kB\nKernelStack:       36280 kB\nPageTables:       145204 kB\nSecPageTables:      7108 kB\nNFS_Unstable:          0 kB\nBounce:                0 kB\nWritebackTmp:          0 kB\nCommitLimit:    158542924 kB\nCommitted_AS:   53666540 kB\nVmallocTotal:   34359738367 kB\nVmallocUsed:      473512 kB\nVmallocChunk:          0 kB\nPercpu:            14448 kB\nHardwareCorrupted:     0 kB\nAnonHugePages:   3450880 kB\nShmemHugePages:        0 kB\nShmemPmdMapped:        0 kB\nFileHugePages:         0 kB\nFilePmdMapped:         0 kB\nCmaTotal:              0 kB\nCmaFree:               0 kB\nUnaccepted:            0 kB\nBalloon:               0 kB\nGPUActive:         13808 kB\nGPUReclaim:          100 kB\nHugePages_Total:       0\nHugePages_Free:        0\nHugePages_Rsvd:        0\nHugePages_Surp:        0\nHugepagesize:       2048 kB\nHugetlb:               0 kB\nDirectMap4k:     2107880 kB\nDirectMap2M:    35287040 kB\nDirectMap1G:    27262976 kB\n",
+    "affinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "python": "Python 3.14.8",
+    "openssl": "OpenSSL 3.6.5 29 Sep 2026 (Library: OpenSSL 3.6.5 29 Sep 2026)",
+    "bwrap": "bubblewrap 0.13.1",
+    "tmp_fs": "tmpfs",
+    "systemd": "systemd 262 (262.1-1-arch)\n+PAM +AUDIT -SELINUX +APPARMOR -IMA +IPE +SMACK +SECCOMP +GNUTLS +OPENSSL +ACL +BLKID +CURL +ELFUTILS +FIDO2 +IDN2 +KMOD +LIBCRYPTSETUP +LIBCRYPTSETUP_PLUGINS +LIBFDISK +PCRE2 +PWQUALITY +P11KIT +QRENCODE +TPM2 +BZIP2 +LZ4 +XZ +ZLIB +ZSTD +BPF_FRAMEWORK +BTF +XKBCOMMON +UTMP +LIBARCHIVE",
+    "governors": [
+      "performance"
+    ],
+    "args": {
+      "binary": "/home/iluxa/Projects/plybox/target/x86_64-unknown-linux-musl/release/plybox",
+      "output": null,
+      "repeats": 5,
+      "cases": "agent-tunnel,agent-secret,stream-tunnel,stream-secret,download-tunnel,upload-tunnel,download-secret,upload-secret,service,cpu,files,idle,idle10",
+      "tiers": "host,ns,gvisor",
+      "requests": 500,
+      "transfer_bytes": 200000000,
+      "secret_upload_bytes": 32000000,
+      "service_requests": 10000,
+      "cpu_iterations": 100000,
+      "file_iterations": 20000,
+      "idle_seconds": 60,
+      "multi_idle_seconds": 10
+    },
+    "accounting": "cgroup v2 cpu.stat usage_usec delta between workload barriers; upstream excluded",
+    "fixture": {
+      "port": 42883,
+      "response_bytes": 16335
+    },
+    "elapsed_seconds": 1331.1945971639943,
+    "measurement_source_sha256": {
+      "fixture.py": "3ad167ff401dfdeff49a9d541ac42eda8a2024bddf4acc009c7b7becc3b636df",
+      "workload.py": "0bb51f0baa455937e4e5687be3c66e265bdf756b9255cf663fb3fa375c944cee",
+      "run.py": "ca39aceb6c0cd9b89f35947fdbd7d4359a8420b18751d907eddc6741f3df0992"
+    },
+    "report_source_sha256": "0ca35b2cd704e04c41563044c0fc61d465cc63b1523cc387b8cc19246d67381c"
+  },
+  "trials": [
+    {
+      "case": "agent-tunnel",
+      "tier": "host",
+      "repeat": 1,
+      "metrics": {
+        "requests": 500,
+        "seconds": 0.3939296619792003,
+        "requests_s": 1269.262125344601,
+        "p50_ms": 0.7831334951333702,
+        "p99_ms": 0.9869270143099129,
+        "cpu_seconds": 0.237992,
+        "cpu_ms_request": 0.475984
+      }
+    },
+    {
+      "case": "agent-tunnel",
+      "tier": "ns",
+      "repeat": 1,
+      "metrics": {
+        "requests": 500,
+        "seconds": 0.5098471449746285,
+        "requests_s": 980.6860839141926,
+        "p50_ms": 1.0186825093114749,
+        "p99_ms": 1.217398006701842,
+        "cpu_seconds": 0.438133,
+        "cpu_ms_request": 0.876266
+      }
+    },
+    {
+      "case": "agent-tunnel",
+      "tier": "gvisor",
+      "repeat": 1,
+      "metrics": {
+        "requests": 500,
+        "seconds": 0.9020565809999999,
+        "requests_s": 554.2889554064459,
+        "p50_ms": 1.7847005000000138,
+        "p99_ms": 2.2823440000000472,
+        "cpu_seconds": 1.688727,
+        "cpu_ms_request": 3.377454
+      }
+    },
+    {
+      "case": "agent-tunnel",
+      "tier": "ns",
+      "repeat": 2,
+      "metrics": {
+        "requests": 500,
+        "seconds": 0.5066042430116795,
+        "requests_s": 986.9637037139319,
+        "p50_ms": 1.0144124971702695,
+        "p99_ms": 1.229248009622097,
+        "cpu_seconds": 0.43446,
+        "cpu_ms_request": 0.86892
+      }
+    },
+    {
+      "case": "agent-tunnel",
+      "tier": "gvisor",
+      "repeat": 2,
+      "metrics": {
+        "requests": 500,
+        "seconds": 0.9153873579999999,
+        "requests_s": 546.2168508558319,
+        "p50_ms": 1.7796604999999883,
+        "p99_ms": 3.0888519999999753,
+        "cpu_seconds": 1.690977,
+        "cpu_ms_request": 3.381954
+      }
+    },
+    {
+      "case": "agent-tunnel",
+      "tier": "host",
+      "repeat": 2,
+      "metrics": {
+        "requests": 500,
+        "seconds": 0.3881696070020553,
+        "requests_s": 1288.0967262265658,
+        "p50_ms": 0.7629629981238395,
+        "p99_ms": 0.9960579918697476,
+        "cpu_seconds": 0.238232,
+        "cpu_ms_request": 0.476464
+      }
+    },
+    {
+      "case": "agent-tunnel",
+      "tier": "gvisor",
+      "repeat": 3,
+      "metrics": {
+        "requests": 500,
+        "seconds": 0.898801647,
+        "requests_s": 556.2962658879062,
+        "p50_ms": 1.7750699999999897,
+        "p99_ms": 2.224594999999996,
+        "cpu_seconds": 1.682013,
+        "cpu_ms_request": 3.364026
+      }
+    },
+    {
+      "case": "agent-tunnel",
+      "tier": "host",
+      "repeat": 3,
+      "metrics": {
+        "requests": 500,
+        "seconds": 0.39637652499368414,
+        "requests_s": 1261.426871856165,
+        "p50_ms": 0.7664930017199367,
+        "p99_ms": 1.3217469968367368,
+        "cpu_seconds": 0.241109,
+        "cpu_ms_request": 0.482218
+      }
+    },
+    {
+      "case": "agent-tunnel",
+      "tier": "ns",
+      "repeat": 3,
+      "metrics": {
+        "requests": 500,
+        "seconds": 0.49594922800315544,
+        "requests_s": 1008.1677150968744,
+        "p50_ms": 0.9861970029305667,
+        "p99_ms": 1.221696991706267,
+        "cpu_seconds": 0.42564,
+        "cpu_ms_request": 0.85128
+      }
+    },
+    {
+      "case": "agent-tunnel",
+      "tier": "host",
+      "repeat": 4,
+      "metrics": {
+        "requests": 500,
+        "seconds": 0.3869820289837662,
+        "requests_s": 1292.0496626497734,
+        "p50_ms": 0.764043492381461,
+        "p99_ms": 0.9969170205295086,
+        "cpu_seconds": 0.236344,
+        "cpu_ms_request": 0.472688
+      }
+    },
+    {
+      "case": "agent-tunnel",
+      "tier": "ns",
+      "repeat": 4,
+      "metrics": {
+        "requests": 500,
+        "seconds": 0.500790386024164,
+        "requests_s": 998.4217228480782,
+        "p50_ms": 0.995877489913255,
+        "p99_ms": 1.2504270125646144,
+        "cpu_seconds": 0.428335,
+        "cpu_ms_request": 0.85667
+      }
+    },
+    {
+      "case": "agent-tunnel",
+      "tier": "gvisor",
+      "repeat": 4,
+      "metrics": {
+        "requests": 500,
+        "seconds": 0.908591014,
+        "requests_s": 550.3026029266894,
+        "p50_ms": 1.7677655000000458,
+        "p99_ms": 2.932633000000018,
+        "cpu_seconds": 1.683077,
+        "cpu_ms_request": 3.366154
+      }
+    },
+    {
+      "case": "agent-tunnel",
+      "tier": "ns",
+      "repeat": 5,
+      "metrics": {
+        "requests": 500,
+        "seconds": 0.5008003069960978,
+        "requests_s": 998.4019438787924,
+        "p50_ms": 0.993562993244268,
+        "p99_ms": 1.2365069997031242,
+        "cpu_seconds": 0.424418,
+        "cpu_ms_request": 0.848836
+      }
+    },
+    {
+      "case": "agent-tunnel",
+      "tier": "gvisor",
+      "repeat": 5,
+      "metrics": {
+        "requests": 500,
+        "seconds": 0.8928526729999999,
+        "requests_s": 560.0028035084351,
+        "p50_ms": 1.773295499999994,
+        "p99_ms": 2.203274000000033,
+        "cpu_seconds": 1.665448,
+        "cpu_ms_request": 3.330896
+      }
+    },
+    {
+      "case": "agent-tunnel",
+      "tier": "host",
+      "repeat": 5,
+      "metrics": {
+        "requests": 500,
+        "seconds": 0.39867434999905527,
+        "requests_s": 1254.1564311854647,
+        "p50_ms": 0.7693379884585738,
+        "p99_ms": 1.2992770061828196,
+        "cpu_seconds": 0.242545,
+        "cpu_ms_request": 0.48509
+      }
+    },
+    {
+      "case": "agent-secret",
+      "tier": "host",
+      "repeat": 1,
+      "metrics": {
+        "requests": 500,
+        "seconds": 0.3890714840090368,
+        "requests_s": 1285.1108872023804,
+        "p50_ms": 0.7679230038775131,
+        "p99_ms": 1.0077070037368685,
+        "cpu_seconds": 0.240508,
+        "cpu_ms_request": 0.481016
+      }
+    },
+    {
+      "case": "agent-secret",
+      "tier": "ns",
+      "repeat": 1,
+      "metrics": {
+        "requests": 500,
+        "seconds": 0.594509274000302,
+        "requests_s": 841.0297734055971,
+        "p50_ms": 1.1769169941544533,
+        "p99_ms": 1.4345159870572388,
+        "cpu_seconds": 0.52051,
+        "cpu_ms_request": 1.04102
+      }
+    },
+    {
+      "case": "agent-secret",
+      "tier": "gvisor",
+      "repeat": 1,
+      "metrics": {
+        "requests": 500,
+        "seconds": 1.002242623,
+        "requests_s": 498.88119755210204,
+        "p50_ms": 1.9579450000000027,
+        "p99_ms": 3.0667229999999934,
+        "cpu_seconds": 1.743345,
+        "cpu_ms_request": 3.48669
+      }
+    },
+    {
+      "case": "agent-secret",
+      "tier": "ns",
+      "repeat": 2,
+      "metrics": {
+        "requests": 500,
+        "seconds": 0.5932350369985215,
+        "requests_s": 842.836260194197,
+        "p50_ms": 1.1821419902844355,
+        "p99_ms": 1.4282060146797448,
+        "cpu_seconds": 0.518448,
+        "cpu_ms_request": 1.036896
+      }
+    },
+    {
+      "case": "agent-secret",
+      "tier": "gvisor",
+      "repeat": 2,
+      "metrics": {
+        "requests": 500,
+        "seconds": 0.972186868,
+        "requests_s": 514.3044166278535,
+        "p50_ms": 1.9188005000000397,
+        "p99_ms": 2.433963000000011,
+        "cpu_seconds": 1.711658,
+        "cpu_ms_request": 3.423316
+      }
+    },
+    {
+      "case": "agent-secret",
+      "tier": "host",
+      "repeat": 2,
+      "metrics": {
+        "requests": 500,
+        "seconds": 0.4032001890009269,
+        "requests_s": 1240.0787837895843,
+        "p50_ms": 0.7858180033508688,
+        "p99_ms": 1.252407004358247,
+        "cpu_seconds": 0.246691,
+        "cpu_ms_request": 0.493382
+      }
+    },
+    {
+      "case": "agent-secret",
+      "tier": "gvisor",
+      "repeat": 3,
+      "metrics": {
+        "requests": 500,
+        "seconds": 1.046731213,
+        "requests_s": 477.6775487252046,
+        "p50_ms": 2.0037499999999984,
+        "p99_ms": 3.705891000000072,
+        "cpu_seconds": 1.813273,
+        "cpu_ms_request": 3.626546
+      }
+    },
+    {
+      "case": "agent-secret",
+      "tier": "host",
+      "repeat": 3,
+      "metrics": {
+        "requests": 500,
+        "seconds": 0.3911506079894025,
+        "requests_s": 1278.2800020946065,
+        "p50_ms": 0.7761080050840974,
+        "p99_ms": 0.9989379905164242,
+        "cpu_seconds": 0.23747,
+        "cpu_ms_request": 0.47494
+      }
+    },
+    {
+      "case": "agent-secret",
+      "tier": "ns",
+      "repeat": 3,
+      "metrics": {
+        "requests": 500,
+        "seconds": 0.6134446960058995,
+        "requests_s": 815.0693995000187,
+        "p50_ms": 1.2050819932483137,
+        "p99_ms": 1.880855008494109,
+        "cpu_seconds": 0.532696,
+        "cpu_ms_request": 1.065392
+      }
+    },
+    {
+      "case": "agent-secret",
+      "tier": "host",
+      "repeat": 4,
+      "metrics": {
+        "requests": 500,
+        "seconds": 0.3895160630054306,
+        "requests_s": 1283.6441099298875,
+        "p50_ms": 0.7727980118943378,
+        "p99_ms": 0.9365469741169363,
+        "cpu_seconds": 0.237243,
+        "cpu_ms_request": 0.474486
+      }
+    },
+    {
+      "case": "agent-secret",
+      "tier": "ns",
+      "repeat": 4,
+      "metrics": {
+        "requests": 500,
+        "seconds": 0.5983302829845343,
+        "requests_s": 835.6588563526277,
+        "p50_ms": 1.1941775010200217,
+        "p99_ms": 1.4205369807314128,
+        "cpu_seconds": 0.523249,
+        "cpu_ms_request": 1.046498
+      }
+    },
+    {
+      "case": "agent-secret",
+      "tier": "gvisor",
+      "repeat": 4,
+      "metrics": {
+        "requests": 500,
+        "seconds": 0.994441277,
+        "requests_s": 502.794897561357,
+        "p50_ms": 1.9507400000000064,
+        "p99_ms": 3.1164420000000526,
+        "cpu_seconds": 1.738576,
+        "cpu_ms_request": 3.477152
+      }
+    },
+    {
+      "case": "agent-secret",
+      "tier": "ns",
+      "repeat": 5,
+      "metrics": {
+        "requests": 500,
+        "seconds": 0.6004330980067607,
+        "requests_s": 832.7322422095561,
+        "p50_ms": 1.1975369998253882,
+        "p99_ms": 1.4158370031509548,
+        "cpu_seconds": 0.523147,
+        "cpu_ms_request": 1.046294
+      }
+    },
+    {
+      "case": "agent-secret",
+      "tier": "gvisor",
+      "repeat": 5,
+      "metrics": {
+        "requests": 500,
+        "seconds": 0.976294279,
+        "requests_s": 512.1406636860975,
+        "p50_ms": 1.9406254999999872,
+        "p99_ms": 2.43421399999999,
+        "cpu_seconds": 1.725376,
+        "cpu_ms_request": 3.450752
+      }
+    },
+    {
+      "case": "agent-secret",
+      "tier": "host",
+      "repeat": 5,
+      "metrics": {
+        "requests": 500,
+        "seconds": 0.393141062988434,
+        "requests_s": 1271.8081296298212,
+        "p50_ms": 0.782058501499705,
+        "p99_ms": 0.970377994235605,
+        "cpu_seconds": 0.237944,
+        "cpu_ms_request": 0.475888
+      }
+    },
+    {
+      "case": "stream-tunnel",
+      "tier": "host",
+      "repeat": 1,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.1690677299920935,
+        "requests_s": 119.93088920168448,
+        "p50_ms": 8.325938993948512,
+        "p99_ms": 8.544779004296288,
+        "cpu_seconds": 0.315351,
+        "cpu_ms_request": 0.630702
+      }
+    },
+    {
+      "case": "stream-tunnel",
+      "tier": "ns",
+      "repeat": 1,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.322116276976885,
+        "requests_s": 115.68406955254943,
+        "p50_ms": 8.62202349526342,
+        "p99_ms": 9.180536988424137,
+        "cpu_seconds": 0.540471,
+        "cpu_ms_request": 1.080942
+      }
+    },
+    {
+      "case": "stream-tunnel",
+      "tier": "gvisor",
+      "repeat": 1,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.6630333760000005,
+        "requests_s": 107.22633952684794,
+        "p50_ms": 9.269502500000026,
+        "p99_ms": 10.5018939999999,
+        "cpu_seconds": 2.159357,
+        "cpu_ms_request": 4.318714
+      }
+    },
+    {
+      "case": "stream-tunnel",
+      "tier": "ns",
+      "repeat": 2,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.326141184021253,
+        "requests_s": 115.57644069656503,
+        "p50_ms": 8.619953994639218,
+        "p99_ms": 9.709016012493521,
+        "cpu_seconds": 0.542979,
+        "cpu_ms_request": 1.085958
+      }
+    },
+    {
+      "case": "stream-tunnel",
+      "tier": "gvisor",
+      "repeat": 2,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.686705379999999,
+        "requests_s": 106.68475175198661,
+        "p50_ms": 9.319172000000098,
+        "p99_ms": 10.488902999999716,
+        "cpu_seconds": 2.183541,
+        "cpu_ms_request": 4.367082
+      }
+    },
+    {
+      "case": "stream-tunnel",
+      "tier": "host",
+      "repeat": 2,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.188484432990663,
+        "requests_s": 119.37492140635459,
+        "p50_ms": 8.357254002476111,
+        "p99_ms": 9.024478000355884,
+        "cpu_seconds": 0.329219,
+        "cpu_ms_request": 0.658438
+      }
+    },
+    {
+      "case": "stream-tunnel",
+      "tier": "gvisor",
+      "repeat": 3,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.677351119000001,
+        "requests_s": 106.89811119138263,
+        "p50_ms": 9.31520649999995,
+        "p99_ms": 10.382133999999876,
+        "cpu_seconds": 2.165878,
+        "cpu_ms_request": 4.331756
+      }
+    },
+    {
+      "case": "stream-tunnel",
+      "tier": "host",
+      "repeat": 3,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.169544036994921,
+        "requests_s": 119.91718892130004,
+        "p50_ms": 8.327689007273875,
+        "p99_ms": 8.630118012661114,
+        "cpu_seconds": 0.3129,
+        "cpu_ms_request": 0.6258
+      }
+    },
+    {
+      "case": "stream-tunnel",
+      "tier": "ns",
+      "repeat": 3,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.323524141014786,
+        "requests_s": 115.64639948619406,
+        "p50_ms": 8.624818496173248,
+        "p99_ms": 9.624275990063325,
+        "cpu_seconds": 0.543064,
+        "cpu_ms_request": 1.086128
+      }
+    },
+    {
+      "case": "stream-tunnel",
+      "tier": "host",
+      "repeat": 4,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.174898139986908,
+        "requests_s": 119.76340098241725,
+        "p50_ms": 8.332370009156875,
+        "p99_ms": 8.86494800215587,
+        "cpu_seconds": 0.311688,
+        "cpu_ms_request": 0.623376
+      }
+    },
+    {
+      "case": "stream-tunnel",
+      "tier": "ns",
+      "repeat": 4,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.321516503987368,
+        "requests_s": 115.70012506921147,
+        "p50_ms": 8.616692997748032,
+        "p99_ms": 9.339156007627025,
+        "cpu_seconds": 0.544052,
+        "cpu_ms_request": 1.088104
+      }
+    },
+    {
+      "case": "stream-tunnel",
+      "tier": "gvisor",
+      "repeat": 4,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.667944361,
+        "requests_s": 107.11353035340946,
+        "p50_ms": 9.284406499999953,
+        "p99_ms": 10.476385000000032,
+        "cpu_seconds": 2.160049,
+        "cpu_ms_request": 4.320098
+      }
+    },
+    {
+      "case": "stream-tunnel",
+      "tier": "ns",
+      "repeat": 5,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.326327057991875,
+        "requests_s": 115.57147513301547,
+        "p50_ms": 8.622583496617153,
+        "p99_ms": 9.72797500435263,
+        "cpu_seconds": 0.544868,
+        "cpu_ms_request": 1.089736
+      }
+    },
+    {
+      "case": "stream-tunnel",
+      "tier": "gvisor",
+      "repeat": 5,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.659141446,
+        "requests_s": 107.3159091208239,
+        "p50_ms": 9.271007000000164,
+        "p99_ms": 10.822861999999933,
+        "cpu_seconds": 2.156113,
+        "cpu_ms_request": 4.312226
+      }
+    },
+    {
+      "case": "stream-tunnel",
+      "tier": "host",
+      "repeat": 5,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.16994347498985,
+        "requests_s": 119.90570207938299,
+        "p50_ms": 8.32718399760779,
+        "p99_ms": 8.599569002399221,
+        "cpu_seconds": 0.314671,
+        "cpu_ms_request": 0.629342
+      }
+    },
+    {
+      "case": "stream-secret",
+      "tier": "host",
+      "repeat": 1,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.17366354400292,
+        "requests_s": 119.79882775132728,
+        "p50_ms": 8.323010013555177,
+        "p99_ms": 8.907968003768474,
+        "cpu_seconds": 0.313744,
+        "cpu_ms_request": 0.627488
+      }
+    },
+    {
+      "case": "stream-secret",
+      "tier": "ns",
+      "repeat": 1,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.42092343699187,
+        "requests_s": 113.09854312704748,
+        "p50_ms": 8.813332999125123,
+        "p99_ms": 9.492576005868614,
+        "cpu_seconds": 0.631558,
+        "cpu_ms_request": 1.263116
+      }
+    },
+    {
+      "case": "stream-secret",
+      "tier": "gvisor",
+      "repeat": 1,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.7431068849999996,
+        "requests_s": 105.41613590476784,
+        "p50_ms": 9.438126499999978,
+        "p99_ms": 10.897763000000005,
+        "cpu_seconds": 2.22824,
+        "cpu_ms_request": 4.45648
+      }
+    },
+    {
+      "case": "stream-secret",
+      "tier": "ns",
+      "repeat": 2,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.4220896500046365,
+        "requests_s": 113.06871627975153,
+        "p50_ms": 8.810748011455871,
+        "p99_ms": 9.554566000588238,
+        "cpu_seconds": 0.634368,
+        "cpu_ms_request": 1.268736
+      }
+    },
+    {
+      "case": "stream-secret",
+      "tier": "gvisor",
+      "repeat": 2,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.726926515,
+        "requests_s": 105.77697758011371,
+        "p50_ms": 9.425562999999858,
+        "p99_ms": 10.185855000000021,
+        "cpu_seconds": 2.186367,
+        "cpu_ms_request": 4.372734
+      }
+    },
+    {
+      "case": "stream-secret",
+      "tier": "host",
+      "repeat": 2,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.181491204013582,
+        "requests_s": 119.57456696789835,
+        "p50_ms": 8.336254497407936,
+        "p99_ms": 9.187886025756598,
+        "cpu_seconds": 0.320203,
+        "cpu_ms_request": 0.640406
+      }
+    },
+    {
+      "case": "stream-secret",
+      "tier": "gvisor",
+      "repeat": 3,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.74990048,
+        "requests_s": 105.26536337030792,
+        "p50_ms": 9.449771999999967,
+        "p99_ms": 10.472173999999335,
+        "cpu_seconds": 2.248598,
+        "cpu_ms_request": 4.497196
+      }
+    },
+    {
+      "case": "stream-secret",
+      "tier": "host",
+      "repeat": 3,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.174438776011812,
+        "requests_s": 119.7765799975851,
+        "p50_ms": 8.330733500770293,
+        "p99_ms": 8.992393006337807,
+        "cpu_seconds": 0.313988,
+        "cpu_ms_request": 0.627976
+      }
+    },
+    {
+      "case": "stream-secret",
+      "tier": "ns",
+      "repeat": 3,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.410548826010199,
+        "requests_s": 113.36457654688341,
+        "p50_ms": 8.807885998976417,
+        "p99_ms": 9.110063023399562,
+        "cpu_seconds": 0.625304,
+        "cpu_ms_request": 1.250608
+      }
+    },
+    {
+      "case": "stream-secret",
+      "tier": "host",
+      "repeat": 4,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.170567389985081,
+        "requests_s": 119.88776424058422,
+        "p50_ms": 8.320603010361083,
+        "p99_ms": 9.118871996179223,
+        "cpu_seconds": 0.313236,
+        "cpu_ms_request": 0.626472
+      }
+    },
+    {
+      "case": "stream-secret",
+      "tier": "ns",
+      "repeat": 4,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.417110674025025,
+        "requests_s": 113.19616756271641,
+        "p50_ms": 8.807070000329986,
+        "p99_ms": 9.67105699237436,
+        "cpu_seconds": 0.632008,
+        "cpu_ms_request": 1.264016
+      }
+    },
+    {
+      "case": "stream-secret",
+      "tier": "gvisor",
+      "repeat": 4,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.732492035,
+        "requests_s": 105.65258140999703,
+        "p50_ms": 9.423548499999823,
+        "p99_ms": 10.597202000000028,
+        "cpu_seconds": 2.20816,
+        "cpu_ms_request": 4.41632
+      }
+    },
+    {
+      "case": "stream-secret",
+      "tier": "ns",
+      "repeat": 5,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.4164052859996445,
+        "requests_s": 113.21424724878392,
+        "p50_ms": 8.801703996141441,
+        "p99_ms": 9.727965021738783,
+        "cpu_seconds": 0.63214,
+        "cpu_ms_request": 1.26428
+      }
+    },
+    {
+      "case": "stream-secret",
+      "tier": "gvisor",
+      "repeat": 5,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.738436574,
+        "requests_s": 105.52003644905177,
+        "p50_ms": 9.429821999999755,
+        "p99_ms": 10.857981999999877,
+        "cpu_seconds": 2.210899,
+        "cpu_ms_request": 4.421798
+      }
+    },
+    {
+      "case": "stream-secret",
+      "tier": "host",
+      "repeat": 5,
+      "metrics": {
+        "requests": 500,
+        "seconds": 4.1793188320007175,
+        "requests_s": 119.63672074299264,
+        "p50_ms": 8.338204002939165,
+        "p99_ms": 9.002957987831905,
+        "cpu_seconds": 0.31915,
+        "cpu_ms_request": 0.6383
+      }
+    },
+    {
+      "case": "download-tunnel",
+      "tier": "host",
+      "repeat": 1,
+      "metrics": {
+        "seconds": 0.035078148008324206,
+        "bytes": 200000000,
+        "MB_s": 5701.5552802998345,
+        "cpu_seconds": 0.031674,
+        "cpu_seconds_GB": 0.15836999999999998
+      }
+    },
+    {
+      "case": "download-tunnel",
+      "tier": "ns",
+      "repeat": 1,
+      "metrics": {
+        "seconds": 0.051361221994739026,
+        "bytes": 200000000,
+        "MB_s": 3893.9883482617715,
+        "cpu_seconds": 0.10507,
+        "cpu_seconds_GB": 0.52535
+      }
+    },
+    {
+      "case": "download-tunnel",
+      "tier": "gvisor",
+      "repeat": 1,
+      "metrics": {
+        "seconds": 0.20317596500000001,
+        "bytes": 200000000,
+        "MB_s": 984.3684020400739,
+        "cpu_seconds": 0.656646,
+        "cpu_seconds_GB": 3.2832299999999996
+      }
+    },
+    {
+      "case": "download-tunnel",
+      "tier": "ns",
+      "repeat": 2,
+      "metrics": {
+        "seconds": 0.04319833000772633,
+        "bytes": 200000000,
+        "MB_s": 4629.808605199057,
+        "cpu_seconds": 0.089871,
+        "cpu_seconds_GB": 0.449355
+      }
+    },
+    {
+      "case": "download-tunnel",
+      "tier": "gvisor",
+      "repeat": 2,
+      "metrics": {
+        "seconds": 0.203484367,
+        "bytes": 200000000,
+        "MB_s": 982.8764880006728,
+        "cpu_seconds": 0.656212,
+        "cpu_seconds_GB": 3.28106
+      }
+    },
+    {
+      "case": "download-tunnel",
+      "tier": "host",
+      "repeat": 2,
+      "metrics": {
+        "seconds": 0.033770768000977114,
+        "bytes": 200000000,
+        "MB_s": 5922.281660701742,
+        "cpu_seconds": 0.030592,
+        "cpu_seconds_GB": 0.15295999999999998
+      }
+    },
+    {
+      "case": "download-tunnel",
+      "tier": "gvisor",
+      "repeat": 3,
+      "metrics": {
+        "seconds": 0.20509095400000002,
+        "bytes": 200000000,
+        "MB_s": 975.1770914284205,
+        "cpu_seconds": 0.663962,
+        "cpu_seconds_GB": 3.31981
+      }
+    },
+    {
+      "case": "download-tunnel",
+      "tier": "host",
+      "repeat": 3,
+      "metrics": {
+        "seconds": 0.03599755198229104,
+        "bytes": 200000000,
+        "MB_s": 5555.933361757205,
+        "cpu_seconds": 0.032465,
+        "cpu_seconds_GB": 0.162325
+      }
+    },
+    {
+      "case": "download-tunnel",
+      "tier": "ns",
+      "repeat": 3,
+      "metrics": {
+        "seconds": 0.038673678995110095,
+        "bytes": 200000000,
+        "MB_s": 5171.475928765092,
+        "cpu_seconds": 0.08582,
+        "cpu_seconds_GB": 0.4290999999999999
+      }
+    },
+    {
+      "case": "download-tunnel",
+      "tier": "host",
+      "repeat": 4,
+      "metrics": {
+        "seconds": 0.041085044998908415,
+        "bytes": 200000000,
+        "MB_s": 4867.951343495274,
+        "cpu_seconds": 0.037131,
+        "cpu_seconds_GB": 0.185655
+      }
+    },
+    {
+      "case": "download-tunnel",
+      "tier": "ns",
+      "repeat": 4,
+      "metrics": {
+        "seconds": 0.03903599199838936,
+        "bytes": 200000000,
+        "MB_s": 5123.4768161713955,
+        "cpu_seconds": 0.082232,
+        "cpu_seconds_GB": 0.41115999999999997
+      }
+    },
+    {
+      "case": "download-tunnel",
+      "tier": "gvisor",
+      "repeat": 4,
+      "metrics": {
+        "seconds": 0.20044488100000002,
+        "bytes": 200000000,
+        "MB_s": 997.7805319957259,
+        "cpu_seconds": 0.647791,
+        "cpu_seconds_GB": 3.238955
+      }
+    },
+    {
+      "case": "download-tunnel",
+      "tier": "ns",
+      "repeat": 5,
+      "metrics": {
+        "seconds": 0.04646805900847539,
+        "bytes": 200000000,
+        "MB_s": 4304.031721306062,
+        "cpu_seconds": 0.102759,
+        "cpu_seconds_GB": 0.513795
+      }
+    },
+    {
+      "case": "download-tunnel",
+      "tier": "gvisor",
+      "repeat": 5,
+      "metrics": {
+        "seconds": 0.20174766900000002,
+        "bytes": 200000000,
+        "MB_s": 991.3373522050457,
+        "cpu_seconds": 0.652456,
+        "cpu_seconds_GB": 3.26228
+      }
+    },
+    {
+      "case": "download-tunnel",
+      "tier": "host",
+      "repeat": 5,
+      "metrics": {
+        "seconds": 0.03351620599278249,
+        "bytes": 200000000,
+        "MB_s": 5967.262524972808,
+        "cpu_seconds": 0.030388,
+        "cpu_seconds_GB": 0.15194
+      }
+    },
+    {
+      "case": "upload-tunnel",
+      "tier": "host",
+      "repeat": 1,
+      "metrics": {
+        "seconds": 0.033603945979848504,
+        "bytes": 200000000,
+        "MB_s": 5951.681987583699,
+        "cpu_seconds": 0.023537,
+        "cpu_seconds_GB": 0.11768499999999998
+      }
+    },
+    {
+      "case": "upload-tunnel",
+      "tier": "ns",
+      "repeat": 1,
+      "metrics": {
+        "seconds": 0.04060615101479925,
+        "bytes": 200000000,
+        "MB_s": 4925.3621680889755,
+        "cpu_seconds": 0.085564,
+        "cpu_seconds_GB": 0.42782
+      }
+    },
+    {
+      "case": "upload-tunnel",
+      "tier": "gvisor",
+      "repeat": 1,
+      "metrics": {
+        "seconds": 0.19732957699999998,
+        "bytes": 200000000,
+        "MB_s": 1013.5328065898607,
+        "cpu_seconds": 0.624567,
+        "cpu_seconds_GB": 3.122835
+      }
+    },
+    {
+      "case": "upload-tunnel",
+      "tier": "ns",
+      "repeat": 2,
+      "metrics": {
+        "seconds": 0.037090017984155566,
+        "bytes": 200000000,
+        "MB_s": 5392.286412086339,
+        "cpu_seconds": 0.078218,
+        "cpu_seconds_GB": 0.39108999999999994
+      }
+    },
+    {
+      "case": "upload-tunnel",
+      "tier": "gvisor",
+      "repeat": 2,
+      "metrics": {
+        "seconds": 0.39151828,
+        "bytes": 200000000,
+        "MB_s": 510.83183140261036,
+        "cpu_seconds": 0.603878,
+        "cpu_seconds_GB": 3.01939
+      }
+    },
+    {
+      "case": "upload-tunnel",
+      "tier": "host",
+      "repeat": 2,
+      "metrics": {
+        "seconds": 0.04527470000903122,
+        "bytes": 200000000,
+        "MB_s": 4417.478193342083,
+        "cpu_seconds": 0.031786,
+        "cpu_seconds_GB": 0.15893
+      }
+    },
+    {
+      "case": "upload-tunnel",
+      "tier": "gvisor",
+      "repeat": 3,
+      "metrics": {
+        "seconds": 0.19503972000000003,
+        "bytes": 200000000,
+        "MB_s": 1025.4321529993992,
+        "cpu_seconds": 0.618282,
+        "cpu_seconds_GB": 3.0914099999999998
+      }
+    },
+    {
+      "case": "upload-tunnel",
+      "tier": "host",
+      "repeat": 3,
+      "metrics": {
+        "seconds": 0.034015327983070165,
+        "bytes": 200000000,
+        "MB_s": 5879.7022359902685,
+        "cpu_seconds": 0.023968,
+        "cpu_seconds_GB": 0.11983999999999999
+      }
+    },
+    {
+      "case": "upload-tunnel",
+      "tier": "ns",
+      "repeat": 3,
+      "metrics": {
+        "seconds": 0.03520209499401972,
+        "bytes": 200000000,
+        "MB_s": 5681.48003787777,
+        "cpu_seconds": 0.088507,
+        "cpu_seconds_GB": 0.442535
+      }
+    },
+    {
+      "case": "upload-tunnel",
+      "tier": "host",
+      "repeat": 4,
+      "metrics": {
+        "seconds": 0.032299507001880556,
+        "bytes": 200000000,
+        "MB_s": 6192.044974195906,
+        "cpu_seconds": 0.023495,
+        "cpu_seconds_GB": 0.11747499999999998
+      }
+    },
+    {
+      "case": "upload-tunnel",
+      "tier": "ns",
+      "repeat": 4,
+      "metrics": {
+        "seconds": 0.03629506198922172,
+        "bytes": 200000000,
+        "MB_s": 5510.391470316059,
+        "cpu_seconds": 0.078731,
+        "cpu_seconds_GB": 0.393655
+      }
+    },
+    {
+      "case": "upload-tunnel",
+      "tier": "gvisor",
+      "repeat": 4,
+      "metrics": {
+        "seconds": 0.18953276200000002,
+        "bytes": 200000000,
+        "MB_s": 1055.2265365077094,
+        "cpu_seconds": 0.604063,
+        "cpu_seconds_GB": 3.020315
+      }
+    },
+    {
+      "case": "upload-tunnel",
+      "tier": "ns",
+      "repeat": 5,
+      "metrics": {
+        "seconds": 0.037948803015751764,
+        "bytes": 200000000,
+        "MB_s": 5270.258456293974,
+        "cpu_seconds": 0.094102,
+        "cpu_seconds_GB": 0.47051
+      }
+    },
+    {
+      "case": "upload-tunnel",
+      "tier": "gvisor",
+      "repeat": 5,
+      "metrics": {
+        "seconds": 0.19447078099999998,
+        "bytes": 200000000,
+        "MB_s": 1028.4321324343323,
+        "cpu_seconds": 0.618412,
+        "cpu_seconds_GB": 3.0920599999999996
+      }
+    },
+    {
+      "case": "upload-tunnel",
+      "tier": "host",
+      "repeat": 5,
+      "metrics": {
+        "seconds": 0.034820483007933944,
+        "bytes": 200000000,
+        "MB_s": 5743.745712959509,
+        "cpu_seconds": 0.025628,
+        "cpu_seconds_GB": 0.12814
+      }
+    },
+    {
+      "case": "download-secret",
+      "tier": "host",
+      "repeat": 1,
+      "metrics": {
+        "seconds": 0.03355048398952931,
+        "bytes": 200000000,
+        "MB_s": 5961.165867604697,
+        "cpu_seconds": 0.030316,
+        "cpu_seconds_GB": 0.15158
+      }
+    },
+    {
+      "case": "download-secret",
+      "tier": "ns",
+      "repeat": 1,
+      "metrics": {
+        "seconds": 0.08234682597685605,
+        "bytes": 200000000,
+        "MB_s": 2428.751777952084,
+        "cpu_seconds": 0.144537,
+        "cpu_seconds_GB": 0.7226849999999999
+      }
+    },
+    {
+      "case": "download-secret",
+      "tier": "gvisor",
+      "repeat": 1,
+      "metrics": {
+        "seconds": 0.222044727,
+        "bytes": 200000000,
+        "MB_s": 900.7194302794679,
+        "cpu_seconds": 0.750452,
+        "cpu_seconds_GB": 3.7522599999999997
+      }
+    },
+    {
+      "case": "download-secret",
+      "tier": "ns",
+      "repeat": 2,
+      "metrics": {
+        "seconds": 0.08308882900746539,
+        "bytes": 200000000,
+        "MB_s": 2407.0624461686702,
+        "cpu_seconds": 0.142978,
+        "cpu_seconds_GB": 0.7148899999999999
+      }
+    },
+    {
+      "case": "download-secret",
+      "tier": "gvisor",
+      "repeat": 2,
+      "metrics": {
+        "seconds": 0.202978282,
+        "bytes": 200000000,
+        "MB_s": 985.3270903140268,
+        "cpu_seconds": 0.710564,
+        "cpu_seconds_GB": 3.5528199999999996
+      }
+    },
+    {
+      "case": "download-secret",
+      "tier": "host",
+      "repeat": 2,
+      "metrics": {
+        "seconds": 0.033002470998326316,
+        "bytes": 200000000,
+        "MB_s": 6060.1522840560265,
+        "cpu_seconds": 0.029774,
+        "cpu_seconds_GB": 0.14886999999999997
+      }
+    },
+    {
+      "case": "download-secret",
+      "tier": "gvisor",
+      "repeat": 3,
+      "metrics": {
+        "seconds": 0.20085780899999997,
+        "bytes": 200000000,
+        "MB_s": 995.7292723431033,
+        "cpu_seconds": 0.706748,
+        "cpu_seconds_GB": 3.53374
+      }
+    },
+    {
+      "case": "download-secret",
+      "tier": "host",
+      "repeat": 3,
+      "metrics": {
+        "seconds": 0.03473685999051668,
+        "bytes": 200000000,
+        "MB_s": 5757.572793125254,
+        "cpu_seconds": 0.03091,
+        "cpu_seconds_GB": 0.15455
+      }
+    },
+    {
+      "case": "download-secret",
+      "tier": "ns",
+      "repeat": 3,
+      "metrics": {
+        "seconds": 0.08137538700248115,
+        "bytes": 200000000,
+        "MB_s": 2457.745607942878,
+        "cpu_seconds": 0.140368,
+        "cpu_seconds_GB": 0.7018399999999999
+      }
+    },
+    {
+      "case": "download-secret",
+      "tier": "host",
+      "repeat": 4,
+      "metrics": {
+        "seconds": 0.033134969999082386,
+        "bytes": 200000000,
+        "MB_s": 6035.91915144449,
+        "cpu_seconds": 0.02991,
+        "cpu_seconds_GB": 0.14955
+      }
+    },
+    {
+      "case": "download-secret",
+      "tier": "ns",
+      "repeat": 4,
+      "metrics": {
+        "seconds": 0.08484159898944199,
+        "bytes": 200000000,
+        "MB_s": 2357.3341660485294,
+        "cpu_seconds": 0.146604,
+        "cpu_seconds_GB": 0.73302
+      }
+    },
+    {
+      "case": "download-secret",
+      "tier": "gvisor",
+      "repeat": 4,
+      "metrics": {
+        "seconds": 0.20481734099999999,
+        "bytes": 200000000,
+        "MB_s": 976.4798186692601,
+        "cpu_seconds": 0.724441,
+        "cpu_seconds_GB": 3.6222049999999997
+      }
+    },
+    {
+      "case": "download-secret",
+      "tier": "ns",
+      "repeat": 5,
+      "metrics": {
+        "seconds": 0.08574387300177477,
+        "bytes": 200000000,
+        "MB_s": 2332.52817954538,
+        "cpu_seconds": 0.147362,
+        "cpu_seconds_GB": 0.73681
+      }
+    },
+    {
+      "case": "download-secret",
+      "tier": "gvisor",
+      "repeat": 5,
+      "metrics": {
+        "seconds": 0.22233584900000003,
+        "bytes": 200000000,
+        "MB_s": 899.540046733534,
+        "cpu_seconds": 0.749467,
+        "cpu_seconds_GB": 3.7473349999999996
+      }
+    },
+    {
+      "case": "download-secret",
+      "tier": "host",
+      "repeat": 5,
+      "metrics": {
+        "seconds": 0.03452451899647713,
+        "bytes": 200000000,
+        "MB_s": 5792.9844010399665,
+        "cpu_seconds": 0.030852,
+        "cpu_seconds_GB": 0.15426
+      }
+    },
+    {
+      "case": "upload-secret",
+      "tier": "host",
+      "repeat": 1,
+      "metrics": {
+        "seconds": 0.006827392993727699,
+        "bytes": 32000000,
+        "MB_s": 4687.001323843271,
+        "cpu_seconds": 0.004758,
+        "cpu_seconds_GB": 0.1486875
+      }
+    },
+    {
+      "case": "upload-secret",
+      "tier": "ns",
+      "repeat": 1,
+      "metrics": {
+        "seconds": 0.048283645999617875,
+        "bytes": 32000000,
+        "MB_s": 662.7502819537127,
+        "cpu_seconds": 0.056448,
+        "cpu_seconds_GB": 1.764
+      }
+    },
+    {
+      "case": "upload-secret",
+      "tier": "gvisor",
+      "repeat": 1,
+      "metrics": {
+        "seconds": 0.07682269599999998,
+        "bytes": 32000000,
+        "MB_s": 416.54356936392867,
+        "cpu_seconds": 0.156654,
+        "cpu_seconds_GB": 4.8954375
+      }
+    },
+    {
+      "case": "upload-secret",
+      "tier": "ns",
+      "repeat": 2,
+      "metrics": {
+        "seconds": 0.05164848599815741,
+        "bytes": 32000000,
+        "MB_s": 619.5728564268393,
+        "cpu_seconds": 0.060008,
+        "cpu_seconds_GB": 1.8752499999999999
+      }
+    },
+    {
+      "case": "upload-secret",
+      "tier": "gvisor",
+      "repeat": 2,
+      "metrics": {
+        "seconds": 0.07424839899999999,
+        "bytes": 32000000,
+        "MB_s": 430.98572401540946,
+        "cpu_seconds": 0.15627,
+        "cpu_seconds_GB": 4.883437499999999
+      }
+    },
+    {
+      "case": "upload-secret",
+      "tier": "host",
+      "repeat": 2,
+      "metrics": {
+        "seconds": 0.007121605012798682,
+        "bytes": 32000000,
+        "MB_s": 4493.369113070831,
+        "cpu_seconds": 0.004834,
+        "cpu_seconds_GB": 0.1510625
+      }
+    },
+    {
+      "case": "upload-secret",
+      "tier": "gvisor",
+      "repeat": 3,
+      "metrics": {
+        "seconds": 0.078257335,
+        "bytes": 32000000,
+        "MB_s": 408.90735673531435,
+        "cpu_seconds": 0.157902,
+        "cpu_seconds_GB": 4.9344375
+      }
+    },
+    {
+      "case": "upload-secret",
+      "tier": "host",
+      "repeat": 3,
+      "metrics": {
+        "seconds": 0.00686866301111877,
+        "bytes": 32000000,
+        "MB_s": 4658.839711338209,
+        "cpu_seconds": 0.004527,
+        "cpu_seconds_GB": 0.14146874999999998
+      }
+    },
+    {
+      "case": "upload-secret",
+      "tier": "ns",
+      "repeat": 3,
+      "metrics": {
+        "seconds": 0.04681549500674009,
+        "bytes": 32000000,
+        "MB_s": 683.5343724421351,
+        "cpu_seconds": 0.054638,
+        "cpu_seconds_GB": 1.7074375
+      }
+    },
+    {
+      "case": "upload-secret",
+      "tier": "host",
+      "repeat": 4,
+      "metrics": {
+        "seconds": 0.0061963790212757885,
+        "bytes": 32000000,
+        "MB_s": 5164.30642640247,
+        "cpu_seconds": 0.004737,
+        "cpu_seconds_GB": 0.14803125
+      }
+    },
+    {
+      "case": "upload-secret",
+      "tier": "ns",
+      "repeat": 4,
+      "metrics": {
+        "seconds": 0.046237661998020485,
+        "bytes": 32000000,
+        "MB_s": 692.076515490121,
+        "cpu_seconds": 0.056006,
+        "cpu_seconds_GB": 1.7501875
+      }
+    },
+    {
+      "case": "upload-secret",
+      "tier": "gvisor",
+      "repeat": 4,
+      "metrics": {
+        "seconds": 0.07502644299999998,
+        "bytes": 32000000,
+        "MB_s": 426.5162883971456,
+        "cpu_seconds": 0.153374,
+        "cpu_seconds_GB": 4.7929375
+      }
+    },
+    {
+      "case": "upload-secret",
+      "tier": "ns",
+      "repeat": 5,
+      "metrics": {
+        "seconds": 0.04848160600522533,
+        "bytes": 32000000,
+        "MB_s": 660.0441412058638,
+        "cpu_seconds": 0.056716,
+        "cpu_seconds_GB": 1.772375
+      }
+    },
+    {
+      "case": "upload-secret",
+      "tier": "gvisor",
+      "repeat": 5,
+      "metrics": {
+        "seconds": 0.07094149800000002,
+        "bytes": 32000000,
+        "MB_s": 451.075899186679,
+        "cpu_seconds": 0.148129,
+        "cpu_seconds_GB": 4.629031250000001
+      }
+    },
+    {
+      "case": "upload-secret",
+      "tier": "host",
+      "repeat": 5,
+      "metrics": {
+        "seconds": 0.00689668400445953,
+        "bytes": 32000000,
+        "MB_s": 4639.911003506639,
+        "cpu_seconds": 0.004849,
+        "cpu_seconds_GB": 0.15153125
+      }
+    },
+    {
+      "case": "service",
+      "tier": "host",
+      "repeat": 1,
+      "metrics": {
+        "requests": 10000,
+        "seconds": 0.4456793460121844,
+        "requests_s": 22437.65633179378,
+        "p50_ms": 0.03806999302469194,
+        "p99_ms": 0.12845100718550384,
+        "cpu_seconds": 0.484299,
+        "cpu_ms_request": 0.0484299
+      }
+    },
+    {
+      "case": "service",
+      "tier": "ns",
+      "repeat": 1,
+      "metrics": {
+        "requests": 10000,
+        "seconds": 0.446485238004243,
+        "requests_s": 22397.157058762532,
+        "p50_ms": 0.03761998959816992,
+        "p99_ms": 0.09356997907161713,
+        "cpu_seconds": 0.494151,
+        "cpu_ms_request": 0.0494151
+      }
+    },
+    {
+      "case": "service",
+      "tier": "gvisor",
+      "repeat": 1,
+      "metrics": {
+        "requests": 10000,
+        "seconds": 0.935082529,
+        "requests_s": 10694.243224386026,
+        "p50_ms": 0.08286000000001792,
+        "p99_ms": 0.2129319999999435,
+        "cpu_seconds": 2.085685,
+        "cpu_ms_request": 0.20856849999999996
+      }
+    },
+    {
+      "case": "service",
+      "tier": "ns",
+      "repeat": 2,
+      "metrics": {
+        "requests": 10000,
+        "seconds": 0.44051317099365406,
+        "requests_s": 22700.79683983855,
+        "p50_ms": 0.03749100142158568,
+        "p99_ms": 0.11863099643960595,
+        "cpu_seconds": 0.48211,
+        "cpu_ms_request": 0.048211
+      }
+    },
+    {
+      "case": "service",
+      "tier": "gvisor",
+      "repeat": 2,
+      "metrics": {
+        "requests": 10000,
+        "seconds": 0.928361105,
+        "requests_s": 10771.670577474268,
+        "p50_ms": 0.08198600000000611,
+        "p99_ms": 0.21535099999997476,
+        "cpu_seconds": 2.069305,
+        "cpu_ms_request": 0.20693050000000002
+      }
+    },
+    {
+      "case": "service",
+      "tier": "host",
+      "repeat": 2,
+      "metrics": {
+        "requests": 10000,
+        "seconds": 0.447703393001575,
+        "requests_s": 22336.216692386828,
+        "p50_ms": 0.03852052032016218,
+        "p99_ms": 0.1228500041179359,
+        "cpu_seconds": 0.485937,
+        "cpu_ms_request": 0.048593700000000004
+      }
+    },
+    {
+      "case": "service",
+      "tier": "gvisor",
+      "repeat": 3,
+      "metrics": {
+        "requests": 10000,
+        "seconds": 0.912954034,
+        "requests_s": 10953.453982985522,
+        "p50_ms": 0.07980550000002973,
+        "p99_ms": 0.21732199999996427,
+        "cpu_seconds": 2.044679,
+        "cpu_ms_request": 0.20446789999999998
+      }
+    },
+    {
+      "case": "service",
+      "tier": "host",
+      "repeat": 3,
+      "metrics": {
+        "requests": 10000,
+        "seconds": 0.46549797197803855,
+        "requests_s": 21482.370712609216,
+        "p50_ms": 0.03979548637289554,
+        "p99_ms": 0.10470100096426904,
+        "cpu_seconds": 0.513402,
+        "cpu_ms_request": 0.0513402
+      }
+    },
+    {
+      "case": "service",
+      "tier": "ns",
+      "repeat": 3,
+      "metrics": {
+        "requests": 10000,
+        "seconds": 0.45134866202715784,
+        "requests_s": 22155.82063561827,
+        "p50_ms": 0.03799000114668161,
+        "p99_ms": 0.1102499954868108,
+        "cpu_seconds": 0.496362,
+        "cpu_ms_request": 0.049636200000000005
+      }
+    },
+    {
+      "case": "service",
+      "tier": "host",
+      "repeat": 4,
+      "metrics": {
+        "requests": 10000,
+        "seconds": 0.4464224959956482,
+        "requests_s": 22400.304845070983,
+        "p50_ms": 0.03823099541477859,
+        "p99_ms": 0.12720099766738713,
+        "cpu_seconds": 0.482853,
+        "cpu_ms_request": 0.048285299999999996
+      }
+    },
+    {
+      "case": "service",
+      "tier": "ns",
+      "repeat": 4,
+      "metrics": {
+        "requests": 10000,
+        "seconds": 0.4328756899922155,
+        "requests_s": 23101.320381793288,
+        "p50_ms": 0.0371999922208488,
+        "p99_ms": 0.12376098311506212,
+        "cpu_seconds": 0.469106,
+        "cpu_ms_request": 0.046910600000000004
+      }
+    },
+    {
+      "case": "service",
+      "tier": "gvisor",
+      "repeat": 4,
+      "metrics": {
+        "requests": 10000,
+        "seconds": 0.926060632,
+        "requests_s": 10798.429016902643,
+        "p50_ms": 0.08151549999996233,
+        "p99_ms": 0.21602099999998292,
+        "cpu_seconds": 2.070758,
+        "cpu_ms_request": 0.2070758
+      }
+    },
+    {
+      "case": "service",
+      "tier": "ns",
+      "repeat": 5,
+      "metrics": {
+        "requests": 10000,
+        "seconds": 0.44952280301367864,
+        "requests_s": 22245.812521541222,
+        "p50_ms": 0.03785999433603138,
+        "p99_ms": 0.11565099703148007,
+        "cpu_seconds": 0.493132,
+        "cpu_ms_request": 0.0493132
+      }
+    },
+    {
+      "case": "service",
+      "tier": "gvisor",
+      "repeat": 5,
+      "metrics": {
+        "requests": 10000,
+        "seconds": 0.9071268530000001,
+        "requests_s": 11023.816533408255,
+        "p50_ms": 0.08078000000000252,
+        "p99_ms": 0.21874099999996677,
+        "cpu_seconds": 2.036544,
+        "cpu_ms_request": 0.2036544
+      }
+    },
+    {
+      "case": "service",
+      "tier": "host",
+      "repeat": 5,
+      "metrics": {
+        "requests": 10000,
+        "seconds": 0.44747702800668776,
+        "requests_s": 22347.51590387908,
+        "p50_ms": 0.03840000135824084,
+        "p99_ms": 0.126781000290066,
+        "cpu_seconds": 0.485466,
+        "cpu_ms_request": 0.0485466
+      }
+    },
+    {
+      "case": "cpu",
+      "tier": "host",
+      "repeat": 1,
+      "metrics": {
+        "seconds": 1.1117347260005772,
+        "iterations": 100000,
+        "cpu_seconds": 1.109467
+      }
+    },
+    {
+      "case": "cpu",
+      "tier": "ns",
+      "repeat": 1,
+      "metrics": {
+        "seconds": 1.1134021269972436,
+        "iterations": 100000,
+        "cpu_seconds": 1.110466
+      }
+    },
+    {
+      "case": "cpu",
+      "tier": "gvisor",
+      "repeat": 1,
+      "metrics": {
+        "seconds": 1.129435167,
+        "iterations": 100000,
+        "cpu_seconds": 1.131284
+      }
+    },
+    {
+      "case": "cpu",
+      "tier": "ns",
+      "repeat": 2,
+      "metrics": {
+        "seconds": 1.114019720989745,
+        "iterations": 100000,
+        "cpu_seconds": 1.112062
+      }
+    },
+    {
+      "case": "cpu",
+      "tier": "gvisor",
+      "repeat": 2,
+      "metrics": {
+        "seconds": 1.107661144,
+        "iterations": 100000,
+        "cpu_seconds": 1.10999
+      }
+    },
+    {
+      "case": "cpu",
+      "tier": "host",
+      "repeat": 2,
+      "metrics": {
+        "seconds": 1.1139664629881736,
+        "iterations": 100000,
+        "cpu_seconds": 1.110946
+      }
+    },
+    {
+      "case": "cpu",
+      "tier": "gvisor",
+      "repeat": 3,
+      "metrics": {
+        "seconds": 1.118336148,
+        "iterations": 100000,
+        "cpu_seconds": 1.120407
+      }
+    },
+    {
+      "case": "cpu",
+      "tier": "host",
+      "repeat": 3,
+      "metrics": {
+        "seconds": 1.1211546670238022,
+        "iterations": 100000,
+        "cpu_seconds": 1.118982
+      }
+    },
+    {
+      "case": "cpu",
+      "tier": "ns",
+      "repeat": 3,
+      "metrics": {
+        "seconds": 1.1108422270044684,
+        "iterations": 100000,
+        "cpu_seconds": 1.108012
+      }
+    },
+    {
+      "case": "cpu",
+      "tier": "host",
+      "repeat": 4,
+      "metrics": {
+        "seconds": 1.109529792011017,
+        "iterations": 100000,
+        "cpu_seconds": 1.107183
+      }
+    },
+    {
+      "case": "cpu",
+      "tier": "ns",
+      "repeat": 4,
+      "metrics": {
+        "seconds": 1.137022385984892,
+        "iterations": 100000,
+        "cpu_seconds": 1.133922
+      }
+    },
+    {
+      "case": "cpu",
+      "tier": "gvisor",
+      "repeat": 4,
+      "metrics": {
+        "seconds": 1.102930545,
+        "iterations": 100000,
+        "cpu_seconds": 1.104644
+      }
+    },
+    {
+      "case": "cpu",
+      "tier": "ns",
+      "repeat": 5,
+      "metrics": {
+        "seconds": 1.0982423989917152,
+        "iterations": 100000,
+        "cpu_seconds": 1.096057
+      }
+    },
+    {
+      "case": "cpu",
+      "tier": "gvisor",
+      "repeat": 5,
+      "metrics": {
+        "seconds": 1.096914922,
+        "iterations": 100000,
+        "cpu_seconds": 1.098934
+      }
+    },
+    {
+      "case": "cpu",
+      "tier": "host",
+      "repeat": 5,
+      "metrics": {
+        "seconds": 1.1016721219930332,
+        "iterations": 100000,
+        "cpu_seconds": 1.099693
+      }
+    },
+    {
+      "case": "files",
+      "tier": "host",
+      "repeat": 1,
+      "metrics": {
+        "seconds": 0.12187593700946309,
+        "iterations": 20000,
+        "cpu_seconds": 0.119482
+      }
+    },
+    {
+      "case": "files",
+      "tier": "ns",
+      "repeat": 1,
+      "metrics": {
+        "seconds": 0.1253474270051811,
+        "iterations": 20000,
+        "cpu_seconds": 0.12286
+      }
+    },
+    {
+      "case": "files",
+      "tier": "gvisor",
+      "repeat": 1,
+      "metrics": {
+        "seconds": 0.650942574,
+        "iterations": 20000,
+        "cpu_seconds": 1.413329
+      }
+    },
+    {
+      "case": "files",
+      "tier": "ns",
+      "repeat": 2,
+      "metrics": {
+        "seconds": 0.1275504390068818,
+        "iterations": 20000,
+        "cpu_seconds": 0.126246
+      }
+    },
+    {
+      "case": "files",
+      "tier": "gvisor",
+      "repeat": 2,
+      "metrics": {
+        "seconds": 0.652486803,
+        "iterations": 20000,
+        "cpu_seconds": 1.417076
+      }
+    },
+    {
+      "case": "files",
+      "tier": "host",
+      "repeat": 2,
+      "metrics": {
+        "seconds": 0.12227477598935366,
+        "iterations": 20000,
+        "cpu_seconds": 0.118585
+      }
+    },
+    {
+      "case": "files",
+      "tier": "gvisor",
+      "repeat": 3,
+      "metrics": {
+        "seconds": 0.645683504,
+        "iterations": 20000,
+        "cpu_seconds": 1.404123
+      }
+    },
+    {
+      "case": "files",
+      "tier": "host",
+      "repeat": 3,
+      "metrics": {
+        "seconds": 0.1199899909843225,
+        "iterations": 20000,
+        "cpu_seconds": 0.117009
+      }
+    },
+    {
+      "case": "files",
+      "tier": "ns",
+      "repeat": 3,
+      "metrics": {
+        "seconds": 0.1246367679850664,
+        "iterations": 20000,
+        "cpu_seconds": 0.122312
+      }
+    },
+    {
+      "case": "files",
+      "tier": "host",
+      "repeat": 4,
+      "metrics": {
+        "seconds": 0.12112758698640391,
+        "iterations": 20000,
+        "cpu_seconds": 0.118772
+      }
+    },
+    {
+      "case": "files",
+      "tier": "ns",
+      "repeat": 4,
+      "metrics": {
+        "seconds": 0.12748174200532958,
+        "iterations": 20000,
+        "cpu_seconds": 0.124609
+      }
+    },
+    {
+      "case": "files",
+      "tier": "gvisor",
+      "repeat": 4,
+      "metrics": {
+        "seconds": 0.659759023,
+        "iterations": 20000,
+        "cpu_seconds": 1.435673
+      }
+    },
+    {
+      "case": "files",
+      "tier": "ns",
+      "repeat": 5,
+      "metrics": {
+        "seconds": 0.12655764500959776,
+        "iterations": 20000,
+        "cpu_seconds": 0.124002
+      }
+    },
+    {
+      "case": "files",
+      "tier": "gvisor",
+      "repeat": 5,
+      "metrics": {
+        "seconds": 0.651156343,
+        "iterations": 20000,
+        "cpu_seconds": 1.413545
+      }
+    },
+    {
+      "case": "files",
+      "tier": "host",
+      "repeat": 5,
+      "metrics": {
+        "seconds": 0.12613468201016076,
+        "iterations": 20000,
+        "cpu_seconds": 0.123401
+      }
+    },
+    {
+      "case": "idle",
+      "tier": "host",
+      "repeat": 1,
+      "metrics": {
+        "seconds": 60.00041502001113,
+        "boxes": 1,
+        "cpu_seconds": 0.0,
+        "rss_bytes": 2404352.0,
+        "pss_bytes": 235520.0,
+        "memory_current_bytes": 204800.0,
+        "memory_peak_bytes": 770048.0
+      }
+    },
+    {
+      "case": "idle",
+      "tier": "ns",
+      "repeat": 1,
+      "metrics": {
+        "seconds": 60.00066609799978,
+        "boxes": 1,
+        "cpu_seconds": 0.0,
+        "rss_bytes": 14163968.0,
+        "pss_bytes": 7053312.0,
+        "memory_current_bytes": 5615616.0,
+        "memory_peak_bytes": 7319552.0
+      }
+    },
+    {
+      "case": "idle",
+      "tier": "gvisor",
+      "repeat": 1,
+      "metrics": {
+        "seconds": 60.00115033399197,
+        "boxes": 1,
+        "cpu_seconds": 0.000183,
+        "rss_bytes": 89604096.0,
+        "pss_bytes": 71356416.0,
+        "memory_current_bytes": 35074048.0,
+        "memory_peak_bytes": 42242048.0
+      }
+    },
+    {
+      "case": "idle",
+      "tier": "ns",
+      "repeat": 2,
+      "metrics": {
+        "seconds": 60.000553399993805,
+        "boxes": 1,
+        "cpu_seconds": 0.0,
+        "rss_bytes": 14172160.0,
+        "pss_bytes": 7063552.0,
+        "memory_current_bytes": 5595136.0,
+        "memory_peak_bytes": 7225344.0
+      }
+    },
+    {
+      "case": "idle",
+      "tier": "gvisor",
+      "repeat": 2,
+      "metrics": {
+        "seconds": 60.00109733801219,
+        "boxes": 1,
+        "cpu_seconds": 0.000177,
+        "rss_bytes": 87728128.0,
+        "pss_bytes": 69816320.0,
+        "memory_current_bytes": 33038336.0,
+        "memory_peak_bytes": 47255552.0
+      }
+    },
+    {
+      "case": "idle",
+      "tier": "host",
+      "repeat": 2,
+      "metrics": {
+        "seconds": 60.00041751898243,
+        "boxes": 1,
+        "cpu_seconds": 0.0,
+        "rss_bytes": 2404352.0,
+        "pss_bytes": 236544.0,
+        "memory_current_bytes": 200704.0,
+        "memory_peak_bytes": 765952.0
+      }
+    },
+    {
+      "case": "idle",
+      "tier": "gvisor",
+      "repeat": 3,
+      "metrics": {
+        "seconds": 60.00113108399091,
+        "boxes": 1,
+        "cpu_seconds": 0.000198,
+        "rss_bytes": 88571904.0,
+        "pss_bytes": 70906880.0,
+        "memory_current_bytes": 35094528.0,
+        "memory_peak_bytes": 47800320.0
+      }
+    },
+    {
+      "case": "idle",
+      "tier": "host",
+      "repeat": 3,
+      "metrics": {
+        "seconds": 60.0004834359861,
+        "boxes": 1,
+        "cpu_seconds": 0.0,
+        "rss_bytes": 2404352.0,
+        "pss_bytes": 234496.0,
+        "memory_current_bytes": 204800.0,
+        "memory_peak_bytes": 1032192.0
+      }
+    },
+    {
+      "case": "idle",
+      "tier": "ns",
+      "repeat": 3,
+      "metrics": {
+        "seconds": 60.00055157899624,
+        "boxes": 1,
+        "cpu_seconds": 0.0,
+        "rss_bytes": 14176256.0,
+        "pss_bytes": 7038976.0,
+        "memory_current_bytes": 5586944.0,
+        "memory_peak_bytes": 7012352.0
+      }
+    },
+    {
+      "case": "idle",
+      "tier": "host",
+      "repeat": 4,
+      "metrics": {
+        "seconds": 60.000407739018556,
+        "boxes": 1,
+        "cpu_seconds": 0.0,
+        "rss_bytes": 2404352.0,
+        "pss_bytes": 234496.0,
+        "memory_current_bytes": 212992.0,
+        "memory_peak_bytes": 1568768.0
+      }
+    },
+    {
+      "case": "idle",
+      "tier": "ns",
+      "repeat": 4,
+      "metrics": {
+        "seconds": 60.00063766899984,
+        "boxes": 1,
+        "cpu_seconds": 0.0,
+        "rss_bytes": 14180352.0,
+        "pss_bytes": 7052288.0,
+        "memory_current_bytes": 5595136.0,
+        "memory_peak_bytes": 6877184.0
+      }
+    },
+    {
+      "case": "idle",
+      "tier": "gvisor",
+      "repeat": 4,
+      "metrics": {
+        "seconds": 60.001260518998606,
+        "boxes": 1,
+        "cpu_seconds": 0.000154,
+        "rss_bytes": 86323200.0,
+        "pss_bytes": 68839424.0,
+        "memory_current_bytes": 32854016.0,
+        "memory_peak_bytes": 46473216.0
+      }
+    },
+    {
+      "case": "idle",
+      "tier": "ns",
+      "repeat": 5,
+      "metrics": {
+        "seconds": 60.00070038400008,
+        "boxes": 1,
+        "cpu_seconds": 0.0,
+        "rss_bytes": 14192640.0,
+        "pss_bytes": 7055360.0,
+        "memory_current_bytes": 5599232.0,
+        "memory_peak_bytes": 7331840.0
+      }
+    },
+    {
+      "case": "idle",
+      "tier": "gvisor",
+      "repeat": 5,
+      "metrics": {
+        "seconds": 60.00105965000694,
+        "boxes": 1,
+        "cpu_seconds": 0.000137,
+        "rss_bytes": 91303936.0,
+        "pss_bytes": 73686016.0,
+        "memory_current_bytes": 37167104.0,
+        "memory_peak_bytes": 51097600.0
+      }
+    },
+    {
+      "case": "idle",
+      "tier": "host",
+      "repeat": 5,
+      "metrics": {
+        "seconds": 60.00042557599954,
+        "boxes": 1,
+        "cpu_seconds": 0.0,
+        "rss_bytes": 2383872.0,
+        "pss_bytes": 251904.0,
+        "memory_current_bytes": 196608.0,
+        "memory_peak_bytes": 778240.0
+      }
+    },
+    {
+      "case": "idle10",
+      "tier": "host",
+      "repeat": 1,
+      "metrics": {
+        "seconds": 10.001481624989538,
+        "boxes": 10,
+        "cpu_seconds": 0.0,
+        "rss_bytes": 23998464.0,
+        "pss_bytes": 1541120.0,
+        "memory_current_bytes": 2011136.0,
+        "memory_peak_bytes": 10313728.0
+      }
+    },
+    {
+      "case": "idle10",
+      "tier": "ns",
+      "repeat": 1,
+      "metrics": {
+        "seconds": 10.003022441000212,
+        "boxes": 10,
+        "cpu_seconds": 0.0,
+        "rss_bytes": 137613312.0,
+        "pss_bytes": 46361600.0,
+        "memory_current_bytes": 51744768.0,
+        "memory_peak_bytes": 68386816.0
+      }
+    },
+    {
+      "case": "idle10",
+      "tier": "gvisor",
+      "repeat": 1,
+      "metrics": {
+        "seconds": 10.008676901983563,
+        "boxes": 10,
+        "cpu_seconds": 0.0,
+        "rss_bytes": 899588096.0,
+        "pss_bytes": 349207552.0,
+        "memory_current_bytes": 350232576.0,
+        "memory_peak_bytes": 477335552.0
+      }
+    },
+    {
+      "case": "idle10",
+      "tier": "ns",
+      "repeat": 2,
+      "metrics": {
+        "seconds": 10.002749059000053,
+        "boxes": 10,
+        "cpu_seconds": 0.0,
+        "rss_bytes": 137654272.0,
+        "pss_bytes": 46357504.0,
+        "memory_current_bytes": 51802112.0,
+        "memory_peak_bytes": 67186688.0
+      }
+    },
+    {
+      "case": "idle10",
+      "tier": "gvisor",
+      "repeat": 2,
+      "metrics": {
+        "seconds": 10.007760243985103,
+        "boxes": 10,
+        "cpu_seconds": 0.0,
+        "rss_bytes": 909717504.0,
+        "pss_bytes": 359844864.0,
+        "memory_current_bytes": 361310208.0,
+        "memory_peak_bytes": 500785152.0
+      }
+    },
+    {
+      "case": "idle10",
+      "tier": "host",
+      "repeat": 2,
+      "metrics": {
+        "seconds": 10.001410653989296,
+        "boxes": 10,
+        "cpu_seconds": 0.0,
+        "rss_bytes": 23994368.0,
+        "pss_bytes": 1555456.0,
+        "memory_current_bytes": 1990656.0,
+        "memory_peak_bytes": 9519104.0
+      }
+    },
+    {
+      "case": "idle10",
+      "tier": "gvisor",
+      "repeat": 3,
+      "metrics": {
+        "seconds": 10.007645851001143,
+        "boxes": 10,
+        "cpu_seconds": 0.0,
+        "rss_bytes": 898842624.0,
+        "pss_bytes": 350837760.0,
+        "memory_current_bytes": 352770048.0,
+        "memory_peak_bytes": 491048960.0
+      }
+    },
+    {
+      "case": "idle10",
+      "tier": "host",
+      "repeat": 3,
+      "metrics": {
+        "seconds": 10.001434652978787,
+        "boxes": 10,
+        "cpu_seconds": 0.0,
+        "rss_bytes": 24014848.0,
+        "pss_bytes": 1550336.0,
+        "memory_current_bytes": 2011136.0,
+        "memory_peak_bytes": 9576448.0
+      }
+    },
+    {
+      "case": "idle10",
+      "tier": "ns",
+      "repeat": 3,
+      "metrics": {
+        "seconds": 10.003478447993984,
+        "boxes": 10,
+        "cpu_seconds": 0.0,
+        "rss_bytes": 141819904.0,
+        "pss_bytes": 50538496.0,
+        "memory_current_bytes": 55984128.0,
+        "memory_peak_bytes": 71307264.0
+      }
+    },
+    {
+      "case": "idle10",
+      "tier": "host",
+      "repeat": 4,
+      "metrics": {
+        "seconds": 10.001833368994994,
+        "boxes": 10,
+        "cpu_seconds": 0.0,
+        "rss_bytes": 23965696.0,
+        "pss_bytes": 1546752.0,
+        "memory_current_bytes": 1994752.0,
+        "memory_peak_bytes": 10182656.0
+      }
+    },
+    {
+      "case": "idle10",
+      "tier": "ns",
+      "repeat": 4,
+      "metrics": {
+        "seconds": 10.002706783998292,
+        "boxes": 10,
+        "cpu_seconds": 0.0,
+        "rss_bytes": 141836288.0,
+        "pss_bytes": 50549760.0,
+        "memory_current_bytes": 55914496.0,
+        "memory_peak_bytes": 71630848.0
+      }
+    },
+    {
+      "case": "idle10",
+      "tier": "gvisor",
+      "repeat": 4,
+      "metrics": {
+        "seconds": 10.006554007995874,
+        "boxes": 10,
+        "cpu_seconds": 0.0,
+        "rss_bytes": 879288320.0,
+        "pss_bytes": 332037120.0,
+        "memory_current_bytes": 333559808.0,
+        "memory_peak_bytes": 466575360.0
+      }
+    },
+    {
+      "case": "idle10",
+      "tier": "ns",
+      "repeat": 5,
+      "metrics": {
+        "seconds": 10.002870792988688,
+        "boxes": 10,
+        "cpu_seconds": 0.0,
+        "rss_bytes": 139661312.0,
+        "pss_bytes": 48470016.0,
+        "memory_current_bytes": 53903360.0,
+        "memory_peak_bytes": 69304320.0
+      }
+    },
+    {
+      "case": "idle10",
+      "tier": "gvisor",
+      "repeat": 5,
+      "metrics": {
+        "seconds": 10.00691328800167,
+        "boxes": 10,
+        "cpu_seconds": 0.0,
+        "rss_bytes": 880861184.0,
+        "pss_bytes": 339491840.0,
+        "memory_current_bytes": 341913600.0,
+        "memory_peak_bytes": 481058816.0
+      }
+    },
+    {
+      "case": "idle10",
+      "tier": "host",
+      "repeat": 5,
+      "metrics": {
+        "seconds": 10.001444683992304,
+        "boxes": 10,
+        "cpu_seconds": 0.0,
+        "rss_bytes": 24010752.0,
+        "pss_bytes": 1560576.0,
+        "memory_current_bytes": 2007040.0,
+        "memory_peak_bytes": 7708672.0
+      }
+    }
+  ]
+}

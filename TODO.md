@@ -40,15 +40,12 @@ secrets and host allowlists alone are common now.
    all suites pass. Only util-linux's `unshare` is needed alongside plybox.
    The release ships gVisor's LICENSE; this upstream tag has no separate
    NOTICE. See [provenance and measurements](third_party/gvisor/README.md).
-3. **Measure steady-state overhead**, gVisor against no sandbox, for two
-   workloads: a Python agent loop making HTTPS calls through the proxy, and
-   a small HTTP service. Record:
-   - memory per box (sentry, gofer and supervisor);
-   - CPU per 1,000 requests;
-   - proxy latency and throughput;
-   - idle CPU.
-
-   The numbers go in `docs/research.md`, the headline in the README.
+3. **Measure steady-state overhead — done.** `make bench` compares host,
+   namespace and embedded gVisor across local HTTPS agent loops, streaming,
+   transfers, a loopback service, JSON CPU work, tmpfs files and idle boxes.
+   Five trials per case/tier count whole-box cgroup CPU and RSS/PSS; all
+   195 trials passed. See the dated tables and trial data in
+   [docs/research.md](docs/research.md). The README headline is step 4.
 4. **Rewrite the README around the pitch.** Lead with a Python agent and move
    sessions and `diff`/`apply` lower. Do this after 1–3, so it claims only
    what's true.

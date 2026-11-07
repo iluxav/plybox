@@ -10,6 +10,7 @@
 #                         both tiers (network, ~2 min)
 #   make test-image       the same inside an OCI image (network, ~2 min)
 #   make test-all         all of the above
+#   make bench            local steady-state measurements (about 20–25 min)
 #   make tools            fetch the verified gVisor payload for builds and tests
 #
 # The shipped binary is static musl: it runs as the supervisor on the host
@@ -20,7 +21,7 @@ BINDIR ?= $(PREFIX)/bin
 TARGET := x86_64-unknown-linux-musl
 BIN    := target/$(TARGET)/release/plybox
 
-.PHONY: build install uninstall test test-limits test-sessions test-policy test-security test-image test-all tools clean
+.PHONY: build install uninstall test test-limits test-sessions test-policy test-security test-image test-all bench tools clean
 
 build: tools
 	@rustup target list --installed | grep -qx $(TARGET) || rustup target add $(TARGET)
@@ -61,6 +62,9 @@ test-image: build
 	bash tests/image/run.sh
 
 test-all: test test-limits test-sessions test-policy test-security test-image
+
+bench: build
+	python3 tests/bench/run.py $(abspath $(BIN)) $(BENCH_ARGS)
 
 tools:
 	bash tests/tools/fetch.sh

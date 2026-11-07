@@ -43,6 +43,11 @@ at build time and decoded with flate2's pure-Rust backend.
 | `make test-security` | 41 attacker probes + real workloads, both tiers (network) | ~2 min |
 | `make test-image` | the same inside an OCI image (network) | ~2 min |
 | `make test-all` | everything above | |
+| `make bench` | warm whole-box CPU, HTTPS, service, file I/O and idle memory; local fixtures only | ~20–25 min |
+
+The benchmark needs a working systemd user manager with cgroup v2
+accounting. See [`tests/bench/README.md`](tests/bench/README.md) for workload
+definitions, accounting boundaries, controls and result files.
 
 The `make test-*` integration targets build the embedded binary first.
 The gVisor checks also need util-linux's `unshare`. CI runs the embedded
