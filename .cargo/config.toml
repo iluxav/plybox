@@ -5,6 +5,13 @@
 #   cargo build --release --target x86_64-unknown-linux-musl
 #
 # ring and zstd-sys compile C; without a musl cross gcc installed, the host
-# gcc works for them. An explicitly set CC_x86_64_unknown_linux_musl wins.
+# gcc works for them. An explicitly set CC_x86_64_unknown_linux_musl wins
+# (CI and releases use musl-gcc from Debian/Ubuntu's musl-tools).
+#
+# Ubuntu's gcc turns on _FORTIFY_SOURCE by default, which makes glibc's
+# headers call __memcpy_chk and friends: musl has none of them, so the link
+# fails ("undefined reference to `__memcpy_chk'"). Turn it off for this
+# target only; musl's own headers don't use it anyway.
 [env]
 CC_x86_64_unknown_linux_musl = { value = "gcc", force = false }
+CFLAGS_x86_64_unknown_linux_musl = { value = "-U_FORTIFY_SOURCE", force = false }

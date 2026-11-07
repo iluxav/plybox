@@ -11,15 +11,18 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   TARGET: x86_64-unknown-linux-musl
+  # The musl C compiler for ring and zstd-sys (from musl-tools).
+  CC_x86_64_unknown_linux_musl: musl-gcc
 
 jobs:
   check:
     name: Lint, unit tests, static build
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Toolchain
         run: |
+          sudo apt-get update -q && sudo apt-get install -yq musl-tools
           rustup component add clippy
           rustup target add "$TARGET"
       - name: Clippy
@@ -40,13 +43,13 @@ jobs:
     runs-on: ubuntu-24.04
     needs: check
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Toolchain
         run: rustup target add "$TARGET"
-      - name: bubblewrap and user namespaces
+      - name: bubblewrap, musl-tools, user namespaces
         run: |
           sudo apt-get update -q
-          sudo apt-get install -yq bubblewrap
+          sudo apt-get install -yq bubblewrap musl-tools
           # Ubuntu 23.10+ restricts unprivileged user namespaces via AppArmor.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           bwrap --version

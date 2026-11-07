@@ -11,12 +11,14 @@ permissions:
 
 env:
   TARGET: x86_64-unknown-linux-musl
+  # The musl C compiler for ring and zstd-sys (from musl-tools).
+  CC_x86_64_unknown_linux_musl: musl-gcc
 
 jobs:
   release:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Tag matches Cargo.toml
         run: |
           version="v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
@@ -26,6 +28,7 @@ jobs:
           fi
       - name: Build the static binary
         run: |
+          sudo apt-get update -q && sudo apt-get install -yq musl-tools
           rustup target add "$TARGET"
           cargo test --release
           cargo build --release --target "$TARGET"

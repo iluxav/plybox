@@ -9,6 +9,7 @@ change and passes after it. Measure first, then decide.
 
 ```sh
 rustup target add x86_64-unknown-linux-musl
+sudo apt install musl-tools   # Debian/Ubuntu: optional, the musl C compiler
 make build          # static binary: target/x86_64-unknown-linux-musl/release/plybox
 make install        # → ~/.local/bin/plybox
 ```
