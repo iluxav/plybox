@@ -198,6 +198,7 @@ impl Policy {
         }
         for pair in &mut self.fs.ro_bind {
             let (host, dest) = pair.split_once(':').ok_or("ro_bind: expected HOST:BOX")?;
+            check_box_dest(dest)?;
             *pair = format!("{}:{dest}", absolute(host)?);
         }
         for path in &mut self.net.trust_ca {
@@ -257,6 +258,28 @@ impl Policy {
         std::fs::canonicalize(&self.fs.workspace)
             .map_err(|e| format!("workspace {}: {e}", self.fs.workspace.display()))
     }
+}
+
+/// A `ro_bind` destination inside the box: an absolute path of plain parts
+/// (no `.`, `..` or empty ones — the gVisor tier also creates it as a mount
+/// point inside the bundle on the host), and never `/` or plybox's own
+/// mounts: `/plybox` (its `__inner` installs seccomp and Landlock) and
+/// `/run/plybox` (the proxy socket, the session CA). Those are also mounted
+/// last, so a symlink cannot steer a bind over them; this gives the error.
+fn check_box_dest(dest: &str) -> Result<(), String> {
+    if dest == "/" {
+        return Err("ro_bind destination `/` would cover the whole box".into());
+    }
+    let plain = dest.strip_prefix('/').is_some_and(|rest| rest.split('/').all(|c| !c.is_empty() && c != "." && c != ".."));
+    if !plain {
+        return Err(format!("ro_bind destination `{dest}`: expected an absolute path without `.`, `..` or empty parts"));
+    }
+    for own in ["/plybox", "/run/plybox"] {
+        if dest == own || dest.starts_with(&format!("{own}/")) || own.starts_with(&format!("{dest}/")) {
+            return Err(format!("ro_bind destination `{dest}` would cover plybox's own {own}"));
+        }
+    }
+    Ok(())
 }
 
 /// A secret's value from a file. Refuses a file other users can read (as ssh
@@ -460,6 +483,17 @@ pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, RunOpts), Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ro_bind_cannot_cover_plyboxs_own_mounts() {
+        for ok in ["/opt/claude", "/work/node_modules", "/usr/local/x", "/runner", "/run/user", "/plyboxes"] {
+            assert!(check_box_dest(ok).is_ok(), "refused {ok}");
+        }
+        for bad in ["/", "/plybox", "/run", "/run/plybox", "/run/plybox/ca.pem", "/run/plybox/sock",
+            "opt/x", "", "/opt/../plybox", "/opt/./x", "//plybox", "/opt//x", "/opt/x/"] {
+            assert!(check_box_dest(bad).is_err(), "accepted {bad:?}");
+        }
+    }
+
     #[test]
     fn limit_flags_override_toml_and_survive_saved_policy() {
         let path = std::env::temp_dir().join(format!("plybox-policy-caps-{}.toml", std::process::id()));

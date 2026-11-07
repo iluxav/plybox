@@ -107,6 +107,14 @@ pub fn write_bundle(
     // The workspace: read-only unless the user chose bind mode.
     mounts.push(json!({ "destination": "/work", "type": "bind", "source": work,
                         "options": ["rbind", if workspace_writable { "rw" } else { "ro" }] }));
+    for pair in &pol.fs.ro_bind {
+        let (h, b) = pair.split_once(':').ok_or_else(|| format!("ro_bind `{pair}`: expected HOST:BOX"))?;
+        if host_root {
+            let _ = std::fs::create_dir_all(rootfs.join(b.trim_start_matches('/')));
+        }
+        ro_bind(&mut mounts, h, b);
+    }
+    // plybox's own mounts last, on top of the policy's (see bwrap_argv).
     ro_bind(&mut mounts, &session.to_string_lossy(), "/run/plybox");
     // The socket directory, writable: a unix-socket connect needs write
     // permission, and gVisor enforces that on read-only mounts.
@@ -119,13 +127,6 @@ pub fn write_bundle(
         let _ = std::fs::write(rootfs.join("plybox"), b"");
     }
     ro_bind(&mut mounts, &me.to_string_lossy(), "/plybox");
-    for pair in &pol.fs.ro_bind {
-        let (h, b) = pair.split_once(':').ok_or_else(|| format!("ro_bind `{pair}`: expected HOST:BOX"))?;
-        if host_root {
-            let _ = std::fs::create_dir_all(rootfs.join(b.trim_start_matches('/')));
-        }
-        ro_bind(&mut mounts, h, b);
-    }
 
     let env_list: Vec<String> = env.iter().map(|(k, v)| format!("{k}={v}")).collect();
     // A host cgroup's pids.max does not bound guest processes (they are not

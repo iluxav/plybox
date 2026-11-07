@@ -5,6 +5,7 @@
 #   make test             unit tests (seconds)
 #   make test-limits      storage/ioctl/traffic caps (local fixtures, no internet)
 #   make test-sessions    session lifecycle and resume checks (no network, ~20 s)
+#   make test-policy      a hostile policy or flags cannot weaken the box (~5 s)
 #   make test-security    41 attacker probes + workloads against the binary,
 #                         both tiers (network, ~2 min; gVisor tier needs `make tools`)
 #   make test-image       the same inside an OCI image (network, ~2 min)
@@ -19,7 +20,7 @@ BINDIR ?= $(PREFIX)/bin
 TARGET := x86_64-unknown-linux-musl
 BIN    := target/$(TARGET)/release/plybox
 
-.PHONY: build install uninstall test test-limits test-sessions test-security test-image test-all tools clean
+.PHONY: build install uninstall test test-limits test-sessions test-policy test-security test-image test-all tools clean
 
 build:
 	@rustup target list --installed | grep -qx $(TARGET) || rustup target add $(TARGET)
@@ -50,13 +51,16 @@ test-sessions: build
 	bash tests/sessions/run.sh $(abspath $(BIN))
 	python3 tests/sessions/resume.py $(abspath $(BIN))
 
+test-policy: build
+	bash tests/policy/run.sh $(abspath $(BIN))
+
 test-security: build
 	bash tests/security/run.sh
 
 test-image: build
 	bash tests/image/run.sh
 
-test-all: test test-limits test-sessions test-security test-image
+test-all: test test-limits test-sessions test-policy test-security test-image
 
 tools:
 	bash tests/tools/fetch.sh

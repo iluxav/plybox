@@ -138,7 +138,7 @@ image starts in 4 ms (namespaces) / 18 ms (gVisor). Verified by hand:
 through a symlink (a repo symlink pointing out of the workspace is replaced,
 not followed — the earlier build did follow it, measured), and refuses the
 whole apply if any change would land outside the workspace
-(`make test-sessions`: 22 session checks, 35 resume checks).
+(`make test-sessions`: 26 session checks, 35 resume checks; `make test-policy`: 6 hostile-policy checks).
 
 Known gaps: resume restores only workspace files, not processes or agent
 conversation history; x86_64 only; private registries (login) are not supported

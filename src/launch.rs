@@ -475,17 +475,20 @@ fn bwrap_argv(
     } else {
         push(&["--bind", &work.to_string_lossy(), "/work"]);
     }
+    for pair in &pol.fs.ro_bind {
+        let (h, b) = pair.split_once(':').ok_or_else(|| format!("ro_bind `{pair}`: expected HOST:BOX"))?;
+        push(&["--ro-bind", h, b]);
+    }
+    // plybox's own mounts go last, on top of everything the policy bound:
+    // a symlink in the image or the workspace can steer a policy bind onto
+    // /plybox (whose __inner installs seccomp and Landlock) or /run/plybox,
+    // and the later mount wins. The policy check refuses the direct names.
     push(&["--ro-bind", &session.to_string_lossy(), "/run/plybox"]);
     // Bubblewrap keeps its own POSIX lock until the sandbox is gone, even
     // if this supervisor is terminated while a systemd scope survives it.
     push(&["--lock-file", "/run/plybox/lock"]);
     push(&["--bind", &session.join("sock").to_string_lossy(), "/run/plybox/sock"]);
     push(&["--ro-bind", &me.to_string_lossy(), "/plybox"]);
-    let _ = pol; // rootfs/ro_bind consumed above
-    for pair in &pol.fs.ro_bind {
-        let (h, b) = pair.split_once(':').ok_or_else(|| format!("ro_bind `{pair}`: expected HOST:BOX"))?;
-        push(&["--ro-bind", h, b]);
-    }
 
     if caps.tmpfs.is_some() {
         // Also close writes to the image's temporary root overlay and the

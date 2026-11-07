@@ -26,6 +26,14 @@ list), `env` (non-secret values — they are saved in plain text), `net.allow`
 
 ### Work
 
+Done on the way (found while building item 3, measured): a policy `ro_bind`
+could replace `/plybox` — directly, or steered by a symlink in the image or
+the workspace — and the box then ran with no seccomp filter or Landlock
+(`Seccomp: 0`), in both tiers; a `..` destination made the gVisor tier
+create directories anywhere on the host. Fixed: plybox's own mounts go on
+top, destinations must be plain and may not cover `/plybox`/`/run/plybox`
+(`make test-policy`, 6 checks, all failed on the old build).
+
 1. **Refuse sensitive host paths by default** in `ro_bind`, `workspace`,
    `rootfs`, `trust_ca` and `secrets.*.file` — `~/.ssh`, `~/.aws`, `~/.gnupg`,
    `~/.config/gh`, `~/.claude`, `~/.config/plybox` (except the declared
