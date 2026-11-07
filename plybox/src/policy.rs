@@ -92,6 +92,11 @@ pub struct SecretSpec {
     /// A literal value. Never written back out by `--learn`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value: Option<String>,
+    /// Read the value from this file (`~/` expanded; trailing newline
+    /// dropped). How Kubernetes hands secrets over, and how a value reaches
+    /// plybox without passing through a shell or an environment.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -168,12 +173,13 @@ impl Policy {
     }
 
     /// Secrets as `NAME@HOST` / `NAME=VALUE@HOST` specs for `secrets::parse`.
-    pub fn secret_specs(&self) -> Vec<String> {
+    pub fn secret_specs(&self) -> Result<Vec<String>, String> {
         self.secrets
             .iter()
-            .map(|(name, s)| match &s.value {
-                Some(v) => format!("{name}={v}@{}", s.only),
-                None => format!("{name}@{}", s.only),
+            .map(|(name, s)| match (&s.value, &s.file) {
+                (Some(v), _) => Ok(format!("{name}={v}@{}", s.only)),
+                (None, Some(f)) => Ok(format!("{name}={}@{}", read_secret_file(f)?, s.only)),
+                (None, None) => Ok(format!("{name}@{}", s.only)),
             })
             .collect()
     }
@@ -189,6 +195,33 @@ impl Policy {
     }
 }
 
+/// A secret's value from a file. Refuses a file other users can read (as ssh
+/// does with keys), and never puts the value in an error message.
+fn read_secret_file(path: &str) -> Result<String, String> {
+    use std::os::unix::fs::PermissionsExt;
+    let p = match path.strip_prefix("~/") {
+        Some(rest) => PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(rest),
+        None => PathBuf::from(path),
+    };
+    let md = std::fs::metadata(&p).map_err(|e| format!("secret file {}: {e}", p.display()))?;
+    if md.permissions().mode() & 0o077 != 0 {
+        return Err(format!(
+            "secret file {} is readable by other users (mode {:o}) — chmod 600 it",
+            p.display(),
+            md.permissions().mode() & 0o777
+        ));
+    }
+    let text = std::fs::read_to_string(&p).map_err(|e| format!("secret file {}: {e}", p.display()))?;
+    let value = text.trim_end_matches(['\n', '\r']).to_string();
+    if value.is_empty() {
+        return Err(format!("secret file {} is empty", p.display()));
+    }
+    if value.contains('\n') {
+        return Err(format!("secret file {} has more than one line", p.display()));
+    }
+    Ok(value)
+}
+
 /// Parse `run`'s arguments. Returns the policy, the command and the run options.
 pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, RunOpts), String> {
     let mut pol: Option<Policy> = None;
@@ -197,6 +230,7 @@ pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, RunOpts), Stri
     let mut ro_bind: Vec<String> = vec![];
     let mut env: BTreeMap<String, String> = BTreeMap::new();
     let mut secrets: Vec<String> = vec![];
+    let mut secret_files: Vec<String> = vec![];
     let mut trust_ca: Vec<String> = vec![];
     let mut map: Vec<String> = vec![];
     let mut workspace_mode: Option<String> = None;
@@ -238,6 +272,7 @@ pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, RunOpts), Stri
                 };
             }
             "--secret" => secrets.push(need("--secret")?),
+            "--secret-file" => secret_files.push(need("--secret-file")?),
             "--trust-ca" => trust_ca.push(need("--trust-ca")?),
             "--map" => map.push(need("--map")?),
             "--workspace-mode" => workspace_mode = Some(need("--workspace-mode")?),
@@ -300,12 +335,21 @@ pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, RunOpts), Stri
     }
     p.env.extend(env);
     for spec in secrets {
-        let (lhs, host) = spec.rsplit_once('@').ok_or_else(|| format!("--secret `{spec}`: expected NAME@HOST or NAME=VALUE@HOST"))?;
+        // Never echo the spec back: it may hold the value.
+        let name_only = spec.split(['=', '@']).next().unwrap_or("").to_string();
+        let (lhs, host) = spec
+            .rsplit_once('@')
+            .ok_or_else(|| format!("--secret {name_only}…: expected NAME@HOST or NAME=VALUE@HOST"))?;
         let (name, value) = match lhs.split_once('=') {
             Some((n, v)) => (n.to_string(), Some(v.to_string())),
             None => (lhs.to_string(), None),
         };
-        p.secrets.insert(name, SecretSpec { only: host.to_string(), value });
+        p.secrets.insert(name, SecretSpec { only: host.to_string(), value, file: None });
+    }
+    for spec in secret_files {
+        let (lhs, host) = spec.rsplit_once('@').ok_or_else(|| format!("--secret-file `{spec}`: expected NAME=PATH@HOST"))?;
+        let (name, path) = lhs.split_once('=').ok_or_else(|| format!("--secret-file `{spec}`: expected NAME=PATH@HOST"))?;
+        p.secrets.insert(name.to_string(), SecretSpec { only: host.to_string(), value: None, file: Some(path.to_string()) });
     }
     Ok((p, cmd, opts))
 }

@@ -34,7 +34,7 @@ fn usage() -> ! {
     eprintln!(
         "usage: plybox run [--policy FILE] [--image IMAGE] [--isolation ns|gvisor] [--runsc PATH]\n\
          \x20                 [--rootfs host|DIR] [--work DIR] [--workspace-mode overlay|bind]\n\
-         \x20                 [--allow HOST[:PORT]]... [--secret NAME[=VALUE]@HOST]... [--ro-bind HOST:BOX]...\n\
+         \x20                 [--allow HOST[:PORT]]... [--secret NAME[=VALUE]@HOST]... [--secret-file NAME=PATH@HOST]... [--ro-bind HOST:BOX]...\n\
          \x20                 [--env K=V | --env K]... [--mem SIZE] [--pids N] [--cpu CORES]\n\
          \x20                 [--learn [FILE]] [--session DIR] [--quiet] -- COMMAND [ARGS...]\n\
          \x20      plybox pull IMAGE               fetch an OCI image (e.g. python:3.13-slim) for --image\n\

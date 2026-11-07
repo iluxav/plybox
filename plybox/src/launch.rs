@@ -116,7 +116,7 @@ pub fn run(pol: Policy, cmd: Vec<String>, opts: RunOpts) -> Result<i32, String> 
 
     // Secrets stay here. If there are any, a session CA is made so the
     // proxy can terminate TLS for their hosts, and the box is told to trust it.
-    let secret_list: Vec<Secret> = secrets::parse(&pol.secret_specs())?;
+    let secret_list: Vec<Secret> = secrets::parse(&pol.secret_specs()?)?;
     let tls = if secret_list.is_empty() { None } else { Some(Arc::new(Tls::new(&pol.net.trust_ca)?)) };
     if let Some(t) = &tls {
         t.write_trust_files(&session, &pol.net.trust_ca)?;
