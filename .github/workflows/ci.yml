@@ -33,7 +33,7 @@ jobs:
         run: |
           cargo build --release --target "$TARGET"
           ./target/$TARGET/release/plybox version
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: plybox-linux-x86_64
           path: target/x86_64-unknown-linux-musl/release/plybox
@@ -53,7 +53,20 @@ jobs:
           # Ubuntu 23.10+ restricts unprivileged user namespaces via AppArmor.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           bwrap --version
+          uname -r
+      - name: bubblewrap smoke test
+        run: |
+          out="$(bwrap --unshare-all --unshare-user --die-with-parent --ro-bind / / --dev /dev --proc /proc true 2>&1)" \
+            && echo "::notice title=bwrap::user namespaces work ($(bwrap --version), kernel $(uname -r))" \
+            || { echo "::error title=bwrap::$out"; exit 1; }
+      # Each suite prints one `check <TAB> name <TAB> pass|FAIL <TAB> detail`
+      # line per check; failures become annotations on the run.
       - name: Hostile policy and operator rules
-        run: make test-policy
+        run: |
+          make test-policy 2>&1 | tee policy.log; code=${PIPESTATUS[0]}
+          tests/helpers/annotate.sh policy policy.log "$code"
       - name: Session lifecycle, apply safety, resume
-        run: make test-sessions
+        if: success() || failure()
+        run: |
+          make test-sessions 2>&1 | tee sessions.log; code=${PIPESTATUS[0]}
+          tests/helpers/annotate.sh sessions sessions.log "$code"
