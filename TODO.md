@@ -1,6 +1,71 @@
 # TODO
 
-## Next: policy guard (after the TOML review)
+## Goal (2026-11-07): judge every change against this
+
+**Pitch:** plybox runs untrusted AI agents on any Linux box. One binary.
+No KVM, no Docker, no daemon. Each agent gets its own gVisor kernel, a
+hostname allowlist, and API keys it can use but never see.
+
+**For:**
+- Developers who self-host agent products on a VPS or a bare Linux machine.
+  A typical agent is a Python script with skills and model API calls. It
+  may write files, or run as a long-lived service.
+- Developers running 3rd-party scripts, skills or harnesses on their own
+  machine.
+
+**What matters:** security first. Then the overhead while a box runs: CPU,
+memory and network. Start time and install or build speed don't count.
+
+**Not for:**
+- Kubernetes: `kubernetes-sigs/agent-sandbox` already runs pods under
+  gVisor or Kata.
+- macOS.
+- Heavy builds.
+- "A coding agent edits my repo": Anthropic's sandbox-runtime, Docker
+  Sandboxes and nono cover that.
+
+**Why this gap:** the microVM sandboxes need KVM, which many cloud VMs and
+VPSes don't expose. The rest need Docker or a server process. Placeholder
+secrets and host allowlists alone are common now.
+
+## Next: make the pitch true, then launch
+
+1. **Make gVisor the default tier.** `--isolation ns` stays available as an
+   opt-in until the launch check. Done when `plybox run -- …` with no flags
+   runs under runsc and every suite passes.
+2. **Ship runsc inside the plybox binary.**
+   - Unpack it on first use into plybox's state dir.
+   - Verify it against a SHA-512 compiled into plybox, pinned to the release
+     that `tests/tools/fetch.sh` uses.
+   - Ship gVisor's Apache-2.0 LICENSE and NOTICE.
+
+   Done when a fresh machine needs only the plybox file to run a box, plus
+   util-linux's `unshare`, which every distro has.
+3. **Measure steady-state overhead**, gVisor against no sandbox, for two
+   workloads: a Python agent loop making HTTPS calls through the proxy, and
+   a small HTTP service. Record:
+   - memory per box (sentry, gofer and supervisor);
+   - CPU per 1,000 requests;
+   - proxy latency and throughput;
+   - idle CPU.
+
+   The numbers go in `docs/research.md`, the headline in the README.
+4. **Rewrite the README around the pitch.** Lead with a Python agent and move
+   sessions and `diff`/`apply` lower. Do this after 1–3, so it claims only
+   what's true.
+5. **Launch:** Show HN and r/selfhosted.
+
+Frozen until the launch check: the namespace tier, the session commands
+(`diff`, `apply`, `discard`, `prune`) and `--resume`. They keep working but
+get no new work. Remove them after launch if nobody asks for them.
+
+After launch, led by feedback:
+- inbound ports for services;
+- one host uid per box, to separate tenants from each other;
+- the SDK (below);
+- policy guard item 1.
+
+## Open: policy guard
 
 The policy file is trusted input: several fields reach into the HOST, not
 just the box. Fine when the machine owner writes every policy; a hole once
