@@ -32,9 +32,9 @@ list), `env` (non-secret values — they are saved in plain text), `net.allow`
    secret file itself, for `secrets.*.file`), plybox's own sessions/state
    dirs, `/etc/shadow`, … and any path that *contains* one of them (e.g. `~`,
    `/home`, `/`). Override only with an explicit `--allow-sensitive-path`.
-2. **Print every host path the box can read, every secret file and every
-   `map` at startup** (unless `--quiet`), and record them in the session's
-   start event, so exposure is visible and audited.
+2. ~~Print every host path the box can read, every secret file and every
+   `map` at startup~~ — **done**: `src/exposure.rs`, printed unless
+   `--quiet`, recorded as `exposure` in the start event (sessions check 1e).
 3. **Operator ceilings (for hosting others' code)** — an operator file
    (e.g. `/etc/plybox/operator.toml`) that plybox enforces whatever the
    policy or flags say: allowed path roots for `ro_bind`/`workspace`;

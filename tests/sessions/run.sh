@@ -78,6 +78,16 @@ ms=$(( ($(date +%s%N) - s) / 1000000 ))
 check "session path over the socket limit still runs" $? "socket path $(( ${#SL} + 16 )) bytes, ${ms} ms, exit $code $(head -c 80 "$T/long.out")"
 "$PLYBOX" discard "$SL" >/dev/null 2>&1
 
+# --- 1e. exposure: every host reach shown at start and recorded, no values ---
+WE="$T/wse"; mkdir -p "$WE"; TOKF="$T/tok"; echo "lab-token-$$" > "$TOKF"; chmod 600 "$TOKF"
+"$PLYBOX" run --work "$WE" --ro-bind "$W1:/opt/peek" --secret-file "TOK=$TOKF@example.com" -- true >"$T/exp.out" 2>&1
+SE="$(last)"; RE="$XDG_STATE_HOME/plybox/sessions/$SE/record.jsonl"
+grep -qF "reads   $W1 at /opt/peek (read-only)" "$T/exp.out" && grep -qF "secret  TOK from file $TOKF" "$T/exp.out" \
+  && grep '"start"' "$RE" | grep -q '"kind":"ro_bind"' && grep '"start"' "$RE" | grep -q '"kind":"secret_file"' \
+  && ! grep -q "lab-token-$$" "$RE" "$T/exp.out"
+check "start shows + records host exposure, no values" $? "$(grep -c '^plybox:   ' "$T/exp.out") exposure lines"
+"$PLYBOX" discard "$SE" >/dev/null 2>&1
+
 # --- 2. apply never writes through a symlink that leaves the workspace ------
 W2="$T/ws2"; OUT="$T/outside"; mkdir -p "$W2" "$OUT"; echo original > "$OUT/target.txt"
 ln -s "$OUT/target.txt" "$W2/cfg"

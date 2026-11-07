@@ -196,6 +196,9 @@ fn run_box(
         eprintln!("plybox: LEARN MODE — every public destination is allowed and recorded; the box is NOT contained on the network for this run");
     }
 
+    // Everything the box reaches on the host, shown and recorded up front.
+    let ws_access = if !overlay { "read-write" } else if gvisor_tier { "read-only" } else { "copy; changes held in the session" };
+    let exposure = crate::exposure::of(&pol, &work, ws_access, image.is_some());
     record.event(
         "start",
         json!({
@@ -208,6 +211,7 @@ fn run_box(
                 "disk": caps.disk, "tmpfs": caps.tmpfs, "file_size": caps.file_size,
                 "bytes_out": caps.bytes_out, "bytes_in": caps.bytes_in },
             "session": session, "kernel": uname_release(), "resumed": resuming, "run": meta.runs,
+            "exposure": crate::exposure::to_json(&exposure),
         }),
     );
     if !quiet {
@@ -222,6 +226,9 @@ fn run_box(
             enforcer.describe(),
             workspace::session_name(session)
         );
+        for line in crate::exposure::lines(&exposure) {
+            eprintln!("plybox:   {line}");
+        }
     }
     if !enforcer.limits.is_empty() && matches!(enforcer.mode, limits::Mode::None) {
         eprintln!("plybox: warning: limits requested but {}", enforcer.describe());
@@ -426,18 +433,16 @@ fn bwrap_argv(
     push(&["--unshare-all", "--unshare-user", "--die-with-parent", "--new-session"]);
 
     match pol.fs.rootfs.as_str() {
-        "host" => push(&[
-            "--ro-bind", "/usr", "/usr",
-            "--symlink", "usr/lib", "/lib", "--symlink", "usr/lib", "/lib64",
-            "--symlink", "usr/bin", "/bin", "--symlink", "usr/bin", "/sbin",
-            "--ro-bind-try", "/etc/ssl", "/etc/ssl",
-            "--ro-bind-try", "/etc/ca-certificates", "/etc/ca-certificates",
-            "--ro-bind-try", "/etc/passwd", "/etc/passwd",
-            "--ro-bind-try", "/etc/group", "/etc/group",
-            "--ro-bind-try", "/etc/hosts", "/etc/hosts",
-            "--ro-bind-try", "/etc/ld.so.cache", "/etc/ld.so.cache",
-            "--ro-bind-try", "/etc/localtime", "/etc/localtime",
-        ]),
+        "host" => {
+            push(&[
+                "--ro-bind", "/usr", "/usr",
+                "--symlink", "usr/lib", "/lib", "--symlink", "usr/lib", "/lib64",
+                "--symlink", "usr/bin", "/bin", "--symlink", "usr/bin", "/sbin",
+            ]);
+            for f in crate::exposure::HOST_ETC {
+                push(&["--ro-bind-try", f, f]);
+            }
+        }
         dir => {
             // The image is the read-only lower layer of an in-memory root:
             // mount points can be created on top, the image stays untouched,

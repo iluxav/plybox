@@ -635,7 +635,7 @@ mod tests {
     fn hardlink_to_a_host_file_is_refused() {
         let (root, outside) = scratch("hardlink");
         std::fs::write(outside.join("secret"), b"host secret").unwrap();
-        let target = format!("../outside/secret");
+        let target = "../outside/secret".to_string();
         let err = apply(&root, &layer(&[("stolen", tar::EntryType::Link, b"", Some(&target))])).unwrap_err();
         assert!(err.contains("hardlink"), "{err}");
         assert!(!root.join("stolen").exists());

@@ -20,6 +20,10 @@ Run an AI agent in a box whose only way out is through plybox.
   kernel allows, else through `systemd-run --user`).
 - **Record**: every connection decision, every substitution, start and
   exit — one JSON line each, kept with the session.
+- **Exposure, up front**: at start plybox prints (and records in the start
+  event) every host path the box can read, where each secret comes from and
+  the one host it may go to, and every `map` — names and paths, never
+  values. A policy that reaches into the host is visible before it runs.
 - **Images instead of host tools**: `--image python:3.13-slim` (or `node:22`,
   an ffmpeg image, your own) makes an OCI image the box's `/`. plybox pulls
   it itself — no Docker — verifies every layer's sha256, refuses layers that

@@ -17,6 +17,7 @@
 
 mod byte_budget;
 mod storage;
+mod exposure;
 mod gvisor;
 mod image;
 mod inner;

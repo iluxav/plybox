@@ -77,7 +77,7 @@ pub fn write_bundle(
                 }
             }
             ro_bind(&mut mounts, "/usr", "/usr");
-            for f in ["/etc/ssl", "/etc/ca-certificates", "/etc/passwd", "/etc/group", "/etc/hosts", "/etc/ld.so.cache", "/etc/localtime"] {
+            for f in crate::exposure::HOST_ETC {
                 if Path::new(f).exists() {
                     if Path::new(f).is_file() {
                         let _ = std::fs::write(rootfs.join(&f[1..]), b"");
