@@ -45,6 +45,31 @@ list), `env` (non-secret values — they are saved in plain text), `net.allow`
    itself from a small user request (image, command, env, hosts, limits),
    and never pass user input through as plybox flags.
 
+## Later: SDK — run plybox from code
+
+A thin wrapper around the CLI, not an embedded library: plybox must stay its
+own process (it starts the box, runs the proxy, and holds secrets outside
+the box), so a crash or bug in the caller must not reach the supervisor and
+vice versa. About half a day for 1–2.
+
+1. **Machine-readable CLI first** — `--json` on `run`, `diff`, `apply`,
+   `sessions`, `discard`, `pull`, `images`: one JSON object per command with
+   the session name, exit code, change list, record path and errors. Fixed,
+   documented exit codes (box's own code vs plybox refused vs plybox failed).
+2. **Python and Node packages** (~100 lines each) that build the arguments,
+   run the binary, and parse the JSON:
+   ```python
+   r = plybox.run(["python", "agent.py"], image="python:3.13-slim",
+                  allow=["api.anthropic.com"],
+                  secrets={"ANTHROPIC_API_KEY": "api.anthropic.com"})
+   print(r.exit_code, r.session); r.diff(); r.apply()
+   ```
+   Secrets go by environment or file, never as inline values in argv
+   (visible in `ps`). Keep the wrapper policy-neutral: on a hosted service
+   the operator's rules (see the policy guard above) still decide.
+3. **Rust crate** later, only if someone wants to embed it; same rule —
+   it spawns the binary rather than linking the supervisor in.
+
 ## Known, documented
 
 - An idle proxy connection holds up to 16 KB of the `--bytes-in` budget
