@@ -41,6 +41,7 @@ extern "C" fn forward(sig: libc::c_int) {
 pub fn main(args: &[String]) -> Result<i32, String> {
     let mut sock: Option<PathBuf> = None;
     let mut ro_root = false;
+    let mut gvisor = false;
     let mut file_size = None;
     let mut cmd: Vec<String> = vec![];
     let mut it = args.iter();
@@ -48,6 +49,7 @@ pub fn main(args: &[String]) -> Result<i32, String> {
         match a.as_str() {
             "--proxy-sock" => sock = it.next().map(PathBuf::from),
             "--ro-root" => ro_root = true,
+            "--gvisor" => gvisor = true,
             "--file-size" => file_size = Some(crate::limits::parse_size(it.next().ok_or("--file-size needs a value")?)?),
             "--" => {
                 cmd = it.cloned().collect();
@@ -86,6 +88,9 @@ pub fn main(args: &[String]) -> Result<i32, String> {
         match landlock_fs::apply(ruleset) {
             Ok(RulesetStatus::FullyEnforced) => {}
             Ok(RulesetStatus::PartiallyEnforced) => eprintln!("plybox: warning: landlock partially enforced by this kernel"),
+            // gVisor's kernel has no Landlock; its own mounts are the
+            // filesystem boundary there, so the warning would be noise.
+            Ok(RulesetStatus::NotEnforced) if gvisor => {}
             Ok(RulesetStatus::NotEnforced) => eprintln!("plybox: warning: landlock not enforced by this kernel"),
             Err(e) => {
                 eprintln!("plybox: {e}");

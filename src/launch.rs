@@ -279,6 +279,9 @@ fn run_box(
         // only /work, /tmp, $HOME and /dev, as in host mode.
         inner_argv.push("--ro-root".into());
     }
+    if gvisor_tier {
+        inner_argv.push("--gvisor".into());
+    }
     if let Some(bytes) = caps.file_size {
         inner_argv.extend(["--file-size".into(), bytes.to_string()]);
     }
