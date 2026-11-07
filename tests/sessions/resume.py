@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Exercise resume against real bubblewrap overlays in disposable directories.
 
-Usage: python3 lab/sessions/resume.py /path/to/plybox
+Usage: python3 tests/sessions/resume.py /path/to/plybox
 No network requests or real user sessions are used.
 """
 import json

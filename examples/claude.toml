@@ -1,0 +1,49 @@
+# plybox policy: Claude Code working on a Rust project.
+#
+#   cd your-project
+#   plybox run --policy path/to/examples/claude.toml -- \
+#     claude -p "…task…" --dangerously-skip-permissions
+#
+# --dangerously-skip-permissions is what the box is for: the agent acts
+# without asking, and plybox is what contains it — no host home, network to
+# the hosts below only, the subscription token never inside, every edit held
+# in the session until `plybox apply`.
+#
+# Hosts, measured: Claude Code needs only api.anthropic.com with
+# non-essential traffic off; building a Rust project needs crates.io (index +
+# static); github.com only if a dependency comes from git. github.com is
+# broad — all of GitHub is readable — but the box holds no GitHub
+# credentials, so it cannot push or post anything there.
+
+[fs]
+rootfs = "host"
+workspace = "."              # the directory you run plybox in
+workspace_mode = "overlay"
+# Tools that live under your home are invisible in the box until bound in.
+# These are where mise installs Claude Code and where rustup keeps Rust;
+# adjust them to your machine (`which claude`, `rustup show home`).
+ro_bind = [
+  "~/.local/share/mise/installs/claude:/opt/claude",
+  "~/.rustup:/opt/rustup",
+  "~/.cargo/bin:/opt/cargo/bin",
+]
+
+[net]
+allow = ["api.anthropic.com", "index.crates.io", "static.crates.io", "github.com"]
+
+[secrets]
+# Created by you with `claude setup-token`; plybox reads it, the box never sees it.
+CLAUDE_CODE_OAUTH_TOKEN = { only = "api.anthropic.com", file = "~/.config/plybox/claude-token" }
+
+[limits]
+mem = "8G"
+pids = 4096
+
+[env]
+PATH = "/opt/claude/latest:/opt/cargo/bin:/usr/local/bin:/usr/bin:/bin"
+RUSTUP_HOME = "/opt/rustup"
+CARGO_HOME = "/home/box/.cargo"
+# Build output in the box's /tmp, so `plybox diff` shows source changes only.
+CARGO_TARGET_DIR = "/tmp/target"
+CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1"
+DISABLE_AUTOUPDATER = "1"

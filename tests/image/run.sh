@@ -21,9 +21,9 @@ trap cleanup EXIT
 
 TARGET="$(rustc -vV | sed -n 's/^host: //p')"
 ( cd "$LAB/probe" && RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --quiet --target "$TARGET" )
-( cd "$ROOT/plybox" && cargo build --release --quiet --target x86_64-unknown-linux-musl )
+( cd "$ROOT" && cargo build --release --quiet --target x86_64-unknown-linux-musl )
 PROBE="$LAB/probe/target/$TARGET/release/probe"
-PLYBOX="$ROOT/plybox/target/x86_64-unknown-linux-musl/release/plybox"
+PLYBOX="$ROOT/target/x86_64-unknown-linux-musl/release/plybox"
 RUNSC="$LAB/tools/runsc"
 "$PLYBOX" pull "$IMAGE" >/dev/null 2>&1 || "$PLYBOX" images | grep -q "^$IMAGE " || { echo "cannot pull $IMAGE" >&2; exit 1; }
 

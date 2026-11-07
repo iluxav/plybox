@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""plybox lab: the binary vs the lab's bwrap+boxer reference.
+"""plybox security suite report: the 41 probes and the workloads, both tiers.
 
-    report.py <v0-results-dir>
+    report.py <results-dir>
 """
 import json
 import sys
@@ -34,11 +34,6 @@ def load_workloads(path):
     return out
 
 
-def latest(results, prefix):
-    dirs = sorted(d for d in results.iterdir() if d.is_dir() and d.name.startswith(prefix))
-    return dirs[-1] if dirs else None
-
-
 def with_hostside(rows, hostfile):
     for i, v in load_tsv(hostfile).items():
         if i in HOST_SIDE:
@@ -48,13 +43,9 @@ def with_hostside(rows, hostfile):
 
 def main():
     out = Path(sys.argv[1])
-    results = out.parent
     why = {k: v[0] for k, v in load_tsv(out / "probes.tsv").items()}
     order = list(why)
     data = {"host": load_tsv(out / "host.tsv")}
-    kern = latest(results, "kern-")
-    if kern:
-        data["lab box (bwrap+boxer)"] = with_hostside(load_tsv(kern / "box.boxer.tsv", prefix="probe"), kern / "box.boxer.host.tsv")
     data["plybox"] = with_hostside(load_tsv(out / "plybox.tsv", prefix="probe"), out / "plybox.host.tsv")
     if (out / "plybox.gvisor.tsv").exists():
         data["plybox --isolation gvisor"] = with_hostside(
@@ -71,9 +62,8 @@ def main():
         o, na = sum(x == "ALLOWED" for x in vs), sum(x == "NA" for x in vs)
         return f"{o} ({na} n/a)" if na else str(o)
 
-    print("# plybox v0 — slice 1 against the probes\n")
-    print("`lab box` = the bwrap+boxer configuration the lab proved (step 3). `plybox` = the binary. "
-          "They should match; any difference is a bug or a missing feature. "
+    print("# plybox security suite: 41 attacker probes + workloads\n")
+    print("`host` = no sandbox (the control). `plybox` = namespaces tier, `plybox --isolation gvisor` = gVisor tier. "
           "Cells show open doors; `(n n/a)` = unmeasured, NOT closed.\n")
     print("## Open doors per class\n")
     print("| class | probes | " + " | ".join(cols) + " |")
@@ -82,18 +72,6 @@ def main():
         ids = [i for i in order if i.split(".")[0] == key]
         print(f"| {title} | {len(ids)} | " + " | ".join(opened(c, ids) for c in cols) + " |")
     print(f"| **Total** | {len(order)} | " + " | ".join(f"**{opened(c, order)}**" for c in cols) + " |")
-
-    ref = "lab box (bwrap+boxer)"
-    if ref in data and data[ref]:
-        diffs = [i for i in order if v(ref, i) != v("plybox", i)]
-        print("\n## Differences from the lab box\n")
-        if diffs:
-            print("| probe | lab box | plybox | plybox detail |")
-            print("|---|---|---|---|")
-            for i in diffs:
-                print(f"| `{i}` | {CELL.get(v(ref, i), '?')} | {CELL.get(v('plybox', i), '?')} | {data['plybox'].get(i, ('', ''))[1][:100]} |")
-        else:
-            print("None — the binary reproduces the lab box exactly.")
 
     for col, stem in (("plybox", "plybox"), ("plybox --isolation gvisor", "plybox.gvisor")):
         if not (out / f"{stem}.tsv").exists():

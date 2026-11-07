@@ -10,7 +10,7 @@ set -euo pipefail
 LAB="$(cd "$(dirname "$0")/.." && pwd)"
 ROOT="$(cd "$LAB/.." && pwd)"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-OUT="$LAB/results/v0-$STAMP"
+OUT="$LAB/results/security-$STAMP"
 RUN="$(mktemp -d "$LAB/.run.XXXXXX")"
 mkdir -p "$OUT"
 PIDS=()
@@ -19,9 +19,9 @@ trap cleanup EXIT
 
 TARGET="$(rustc -vV | sed -n 's/^host: //p')"
 ( cd "$LAB/probe" && RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --quiet --target "$TARGET" )
-( cd "$ROOT/plybox" && cargo build --release --quiet --target x86_64-unknown-linux-musl )
+( cd "$ROOT" && cargo build --release --quiet --target x86_64-unknown-linux-musl )
 PROBE="$LAB/probe/target/$TARGET/release/probe"
-PLYBOX="$ROOT/plybox/target/x86_64-unknown-linux-musl/release/plybox"
+PLYBOX="$ROOT/target/x86_64-unknown-linux-musl/release/plybox"
 
 LO_PORT=47871; LAN_PORT=47872
 LAN_IP="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p')"
@@ -36,7 +36,7 @@ export PROBE_SSH_AUTH_SOCK="${SSH_AUTH_SOCK:-}"
 prepare() {
   WORK="$RUN/work-$1"; export PROBE_OUTSIDE="$RUN/outside-$1"
   mkdir -p "$WORK" "$PROBE_OUTSIDE"; git -C "$WORK" init -q
-  cp "$PROBE" "$WORK/probe"; cp "$LAB/net/inside.sh" "$WORK/inside.sh"
+  cp "$PROBE" "$WORK/probe"; cp "$LAB/helpers/inside.sh" "$WORK/inside.sh"
 }
 hostcheck() {
   for pair in "f.inject.githook:.git/hooks/pre-commit" "f.inject.agentcfg:.claude/settings.json"; do
@@ -47,13 +47,13 @@ hostcheck() {
 }
 
 # --- the secret test: a throwaway value, a lab CA, two TLS upstreams that
-# know the value (see lab/full/run.sh for the design) ---
+# know the value (design: docs/research.md, step 4) ---
 REAL="sk-ant-lab-$(openssl rand -hex 12)"
 SECRET_HOST="secret-test.lab"; OTHER_HOST="other.lab"
 ECHO_A=47881; ECHO_B=47882
-python3 "$LAB/net/proxy.py" mkcert --ca-dir "$RUN/ca" --host "$SECRET_HOST" --host "$OTHER_HOST" >/dev/null
-python3 "$LAB/net/echo.py" --port $ECHO_A --cert "$RUN/ca/$SECRET_HOST.pem" --key "$RUN/ca/$SECRET_HOST.key" --expect "$REAL" --name "$SECRET_HOST" & PIDS+=($!)
-python3 "$LAB/net/echo.py" --port $ECHO_B --cert "$RUN/ca/$OTHER_HOST.pem" --key "$RUN/ca/$OTHER_HOST.key" --expect "$REAL" --name "$OTHER_HOST" & PIDS+=($!)
+python3 "$LAB/helpers/proxy.py" mkcert --ca-dir "$RUN/ca" --host "$SECRET_HOST" --host "$OTHER_HOST" >/dev/null
+python3 "$LAB/helpers/echo.py" --port $ECHO_A --cert "$RUN/ca/$SECRET_HOST.pem" --key "$RUN/ca/$SECRET_HOST.key" --expect "$REAL" --name "$SECRET_HOST" & PIDS+=($!)
+python3 "$LAB/helpers/echo.py" --port $ECHO_B --cert "$RUN/ca/$OTHER_HOST.pem" --key "$RUN/ca/$OTHER_HOST.key" --expect "$REAL" --name "$OTHER_HOST" & PIDS+=($!)
 sleep 0.3
 
 NODE_DIR="$HOME/.local/share/mise/installs/node"
@@ -136,5 +136,5 @@ LATW="$RUN/latwork"; mkdir -p "$LATW"
   fi
 } > "$OUT/latency.tsv"
 
-python3 "$LAB/v0/report.py" "$OUT" | tee "$OUT/report.md"
+python3 "$LAB/security/report.py" "$OUT" | tee "$OUT/report.md"
 echo "results: $OUT" >&2

@@ -1,3 +1,9 @@
+> **Historical record.** This is the research log that shaped plybox: each
+> design decision was measured here first. The research scripts it names
+> (`run.sh`, `net/`, `kern/`, `full/`, `gv/`, `vm/`, `compare/`, `boxer/`)
+> were removed once the binary replaced them; they remain in git history.
+> The suites still in use live in `tests/` — see the README.
+
 # plybox lab
 
 Facts before design. Every security claim plybox makes starts here as a

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # plybox lab: session lifecycle and apply safety.
 #
-#   lab/sessions/run.sh [path/to/plybox]
+#   tests/sessions/run.sh [path/to/plybox]
 #
 # Uses a throwaway XDG_STATE_HOME, so the caller's real sessions are never
 # listed, pruned or discarded. Prints one `check <TAB> pass|FAIL <TAB> detail`
@@ -98,5 +98,5 @@ check "discard removes a session (incl. overlay scratch dir)" $? "$S5"
 "$PLYBOX" discard "$T" >/dev/null 2>&1; [ $? -ne 0 ] && [ -d "$T" ]
 check "discard refuses a directory that is not a session" $? "$T still there"
 
-echo "lab dir: $T"
+echo "scratch dir: $T"
 exit $((FAILS > 0))

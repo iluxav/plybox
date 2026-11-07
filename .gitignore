@@ -1,6 +1,20 @@
-target/
-lab/.run.*/
-lab/results/
-# third-party binaries: tools/fetch.sh downloads and verifies them
-lab/tools/*
-!lab/tools/fetch.sh
+# Build output
+/target/
+tests/probe/target/
+
+# Test runs: scratch state and reports, made fresh on every run
+tests/.run.*/
+tests/results/
+
+# Third-party binaries the tests download (tests/tools/fetch.sh)
+tests/tools/*
+!tests/tools/fetch.sh
+
+# Python bytecode from the test helpers
+__pycache__/
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
