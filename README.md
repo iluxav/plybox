@@ -60,17 +60,17 @@ else exists inside the box.
 
 ## Install
 
-**1. Get bubblewrap 0.10 or newer**, which plybox uses for Linux namespaces:
+**1. Get bubblewrap 0.11 or newer**, which plybox uses for Linux namespaces:
 
 ```sh
 sudo pacman -S bubblewrap        # Arch
 sudo dnf install bubblewrap      # Fedora
-sudo apt install bubblewrap      # Debian 13+, Ubuntu 24.10+
-bwrap --version                  # needs 0.10+
+sudo apt install bubblewrap      # Debian, Ubuntu
+bwrap --version                  # needs 0.11+
 ```
 
 <details>
-<summary>Ubuntu 24.04 and Debian 12 ship an older bubblewrap (0.9 and 0.8). Build a current one:</summary>
+<summary>Older distributions ship an older bubblewrap (Ubuntu 24.04: 0.9, Debian 12: 0.8). Build a current one:</summary>
 
 ```sh
 sudo apt install git meson ninja-build pkg-config libcap-dev
@@ -483,7 +483,7 @@ Found a hole? Please report it privately; see [SECURITY.md](SECURITY.md).
 ## Requirements
 
 - Linux on x86_64, with unprivileged user namespaces (kernel 5.11+).
-- [bubblewrap](https://github.com/containers/bubblewrap) 0.10 or newer: the
+- [bubblewrap](https://github.com/containers/bubblewrap) 0.11 or newer: the
   workspace copy and `--image` use its overlay mounts. See
   [Install](#install) for Ubuntu 24.04 and Debian 12.
 - For memory, process and CPU limits: cgroup v2, plus a user systemd session

@@ -127,12 +127,13 @@ fn run_box(
         require_bwrap(&engine, (0, 9), "--tmpfs and --disk need bubblewrap 0.9 or newer (for its --size option)")?;
     }
     // The workspace copy and an image root are overlay mounts, which
-    // bubblewrap gained in 0.10 (Ubuntu 24.04 ships 0.9, Debian 12 0.8).
+    // bubblewrap gained in 0.11.0 (its NEWS; 0.10.0 and Ubuntu 24.04's 0.9.0
+    // answer "Unknown option --overlay-src", measured in CI).
     if !gvisor_tier && (pol.fs.workspace_mode == "overlay" || pol.image.is_some() || pol.fs.rootfs != "host") {
         require_bwrap(
             &engine,
-            (0, 10),
-            "the workspace copy (the default --workspace-mode overlay), --image and --rootfs need bubblewrap 0.10 or newer \
+            (0, 11),
+            "the workspace copy (the default --workspace-mode overlay), --image and --rootfs need bubblewrap 0.11 or newer \
              (for its overlay mounts); install a newer one (https://github.com/iluxav/plybox#requirements) or use \
              --workspace-mode bind with the host's tools",
         )?;

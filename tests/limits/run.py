@@ -113,16 +113,16 @@ for d in ['/dev','/']:
     assert not (work/'must-not-run').exists()
     print('PASS bubblewrap older than 0.9 is refused with a clear message', flush=True)
 
-    # Overlay mounts (the workspace copy, an image root) arrived in 0.10;
-    # Ubuntu 24.04 ships 0.9.0. Bind mode on host tools needs no overlay.
-    (fake/'bwrap').write_text('#!/bin/sh\n[ "$1" = --version ] && echo "bubblewrap 0.9.0" && exit 0\nexit 99\n')
+    # Overlay mounts (the workspace copy, an image root) arrived in 0.11.0;
+    # 0.10.0 lacks them (measured in CI). Bind mode on host tools needs none.
+    (fake/'bwrap').write_text('#!/bin/sh\n[ "$1" = --version ] && echo "bubblewrap 0.10.0" && exit 0\nexit 99\n')
     old = {**env,'PATH':f"{fake}:{os.environ['PATH']}"}
     p = subprocess.run([BIN,'run','--work',str(work),'--','touch','must-not-run'],env=old,capture_output=True,text=True,timeout=10)
-    assert p.returncode != 0 and 'bubblewrap 0.10 or newer' in p.stderr and '0.9.0' in p.stderr, p.stderr
+    assert p.returncode != 0 and 'bubblewrap 0.11 or newer' in p.stderr and '0.10.0' in p.stderr, p.stderr
     p = subprocess.run([BIN,'run','--work',str(work),'--workspace-mode','bind','--','true'],env=old,capture_output=True,text=True,timeout=10)
-    assert p.returncode == 99 and 'bubblewrap 0.10' not in p.stderr, (p.returncode, p.stderr)
+    assert p.returncode == 99 and 'bubblewrap 0.11' not in p.stderr, (p.returncode, p.stderr)
     assert not (work/'must-not-run').exists()
-    print('PASS bubblewrap 0.9 is refused for overlays with a clear message; bind mode still runs', flush=True)
+    print('PASS bubblewrap 0.10 is refused for overlays with a clear message; bind mode still runs', flush=True)
 
     class Plain(socketserver.BaseRequestHandler):
         def handle(self):
