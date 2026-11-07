@@ -7,10 +7,10 @@
 #   make test-sessions    session lifecycle and resume checks (no network, ~20 s)
 #   make test-policy      hostile policy/flags + operator rules (seconds)
 #   make test-security    41 attacker probes + workloads against the binary,
-#                         both tiers (network, ~2 min; gVisor tier needs `make tools`)
+#                         both tiers (network, ~2 min)
 #   make test-image       the same inside an OCI image (network, ~2 min)
 #   make test-all         all of the above
-#   make tools            fetch gVisor's runsc for the gVisor-tier tests
+#   make tools            fetch the verified gVisor payload for builds and tests
 #
 # The shipped binary is static musl: it runs as the supervisor on the host
 # and as `plybox __inner` inside any image, so it must not depend on a libc.
@@ -22,9 +22,9 @@ BIN    := target/$(TARGET)/release/plybox
 
 .PHONY: build install uninstall test test-limits test-sessions test-policy test-security test-image test-all tools clean
 
-build:
+build: tools
 	@rustup target list --installed | grep -qx $(TARGET) || rustup target add $(TARGET)
-	cargo build --release --target $(TARGET)
+	PLYBOX_EMBED_RUNSC="$(abspath tests/tools)" cargo build --release --target $(TARGET)
 
 # A real copy, not a link: what you test is exactly what was just built,
 # and later rebuilds do not change the installed binary behind your back.

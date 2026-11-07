@@ -143,6 +143,10 @@ else
 fi
 
 if [ -x "$RUNSC" ]; then
+  if "$PLYBOX" version | grep -q '(embedded)'; then
+    python3 "$ROOT/tests/policy/embedded.py" "$PLYBOX"
+    check "embedded runtime integrity, extraction and precedence" $? "local regression suite"
+  fi
   python3 "$ROOT/tests/policy/defaults.py" "$PLYBOX" "$RUNSC"
   check "default tier, legacy modes and explicit opt-ins" $? "local regression suite"
 

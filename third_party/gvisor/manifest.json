@@ -1,0 +1,33 @@
+{
+  "release": "release-20261102.0",
+  "target": "x86_64-unknown-linux-musl",
+  "archive": "gvisor-x86_64.tar.bz2",
+  "archive_sha512": "2e6671bb2d033b871c5811ab57e16ac570988b0e0054c525f911cfaf191bab3ca4efb08e0a98daa4b9e7d248f9e5776ef2ef2f8a6b82d829646a42924c98bb05",
+  "files": [
+    {
+      "path": "runsc",
+      "size": 19407310,
+      "sha512": "2c0a480d677b8802667e50353e29f26884cd48a20a5edfa4b0e05ad66799fa36916f5fad676016b8f872c327859061544f22b996f01bfdf9a618a22ac243e31a"
+    },
+    {
+      "path": "gvisor-bin/gvisor_sentry",
+      "size": 54951832,
+      "sha512": "2e30fb09fa43a5703c95f86feb785440a0770ae3697b3957392fbddabc063d3c276fc2fc561d05c98ecc726f20cd889380969916121d09e768c8f55e7d944b68"
+    },
+    {
+      "path": "gvisor-bin/gvisor-sentry-prewarmer",
+      "size": 1752,
+      "sha512": "e634bd1ad061072f409f5445bf05df293d674dfbf62219b573cc26c1f27180c0f6c2d0013e5585e450af5b03362e2166e1273c2107924de35fe44e2b9bdff0b2"
+    },
+    {
+      "path": "gvisor-bin/runsc-fd-parking",
+      "size": 1320,
+      "sha512": "bdcb8034e31250379e24e40399b62c66be88318d969c462fe065a8a785c83d3a638214685ae04d7ee09f7a66695f6381635f989271ad8f0a23ee6e08040b3454"
+    },
+    {
+      "path": "gvisor-bin/gvisor-proc-umounter",
+      "size": 1280,
+      "sha512": "d921da15d7c1822ebf5a3e0753854e2ff96533e37673ed624f71493a2a805acce9d2d9fa1538b47c7673cd813e6f3fe1a224640ec0ec8ec2f034ef58abb94892"
+    }
+  ]
+}

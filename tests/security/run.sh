@@ -19,9 +19,11 @@ trap cleanup EXIT
 
 TARGET="$(rustc -vV | sed -n 's/^host: //p')"
 ( cd "$LAB/probe" && RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --quiet --target "$TARGET" )
-( cd "$ROOT" && cargo build --release --quiet --target x86_64-unknown-linux-musl )
+( cd "$ROOT" && make build >/dev/null )
 PROBE="$LAB/probe/target/$TARGET/release/probe"
 PLYBOX="$ROOT/target/x86_64-unknown-linux-musl/release/plybox"
+"$PLYBOX" version | grep -q '(embedded)'
+export XDG_STATE_HOME="$RUN/state"
 
 LO_PORT=47871; LAN_PORT=47872
 LAN_IP="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p')"
@@ -88,13 +90,13 @@ held="$(awk -F'\t' '$1=="secretenv"{print $2}' "$OUT/plybox.tsv")"
 if [ "$held" = "$REAL" ]; then printf 's.env\tALLOWED\tANTHROPIC_API_KEY inside is the real value\n'
 else printf 's.env\tBLOCKED\tANTHROPIC_API_KEY inside is a placeholder (%s)\n' "${held:0:28}…"; fi >> "$OUT/plybox.host.tsv"
 
-# --- the gVisor tier, same probes, when runsc is available ---
+# --- the embedded gVisor tier, same probes ---
 RUNSC="$LAB/tools/runsc"
 if [ -x "$RUNSC" ]; then
   echo "running plybox --isolation gvisor" >&2
   prepare plybox.gvisor
   GSESSION="$RUN/session-gvisor"
-  "$PLYBOX" run --quiet --isolation gvisor --runsc "$RUNSC" --session "$GSESSION" --work "$WORK" \
+  "$PLYBOX" run --quiet --isolation gvisor --session "$GSESSION" --work "$WORK" \
     --mem 512M --pids 512 \
     --allow api.anthropic.com --allow '*.anthropic.com' --allow registry.npmjs.org \
     --allow "$SECRET_HOST" --allow "$OTHER_HOST" \
@@ -132,7 +134,7 @@ LATW="$RUN/latwork"; mkdir -p "$LATW"
   echo "host	$(for i in $(seq 10); do t /bin/true; done | med)"
   echo "plybox run --isolation ns	$(cd "$RUN" && for i in $(seq 10); do t "$PLYBOX" run --quiet --isolation ns --session "$RUN/lat-$i" --work "$LATW" -- /bin/true; done | med)"
   if [ -x "$RUNSC" ]; then
-    echo "plybox run --isolation gvisor	$(cd "$RUN" && for i in $(seq 10); do t "$PLYBOX" run --quiet --isolation gvisor --runsc "$RUNSC" --session "$RUN/glat-$i" --work "$LATW" -- /bin/true; done | med)"
+    echo "plybox run --isolation gvisor	$(cd "$RUN" && for i in $(seq 10); do t "$PLYBOX" run --quiet --isolation gvisor --session "$RUN/glat-$i" --work "$LATW" -- /bin/true; done | med)"
   fi
 } > "$OUT/latency.tsv"
 

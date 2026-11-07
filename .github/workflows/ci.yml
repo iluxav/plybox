@@ -31,12 +31,14 @@ jobs:
         run: cargo test --release
       - name: Static binary
         run: |
-          cargo build --release --target "$TARGET"
+          make build
           ./target/$TARGET/release/plybox version
       - uses: actions/upload-artifact@v7
         with:
           name: plybox-linux-x86_64
           path: target/x86_64-unknown-linux-musl/release/plybox
+      - name: Clippy with embedded runtime
+        run: PLYBOX_EMBED_RUNSC="$PWD/tests/tools" cargo clippy --release --all-targets -- -D warnings
 
   integration:
     name: Sandbox suites (policy, sessions)

@@ -33,14 +33,13 @@ secrets and host allowlists alone are common now.
 1. **Make gVisor the default tier — done.** `plybox run -- …` uses runsc;
    `--isolation ns` stays available as an opt-in until the launch check.
    All suites pass; old saved namespace sessions retain their isolation.
-2. **Ship runsc inside the plybox binary.**
-   - Unpack it on first use into plybox's state dir.
-   - Verify it against a SHA-512 compiled into plybox, pinned to the release
-     that `tests/tools/fetch.sh` uses.
-   - Ship gVisor's Apache-2.0 LICENSE and NOTICE.
-
-   Done when a fresh machine needs only the plybox file to run a box, plus
-   util-linux's `unshare`, which every distro has.
+2. **Ship runsc inside the plybox binary — done.** Release builds embed
+   `release-20261102.0` and its four required helpers. A private state cache
+   extracts atomically and checks compiled SHA-512 hashes on every launch.
+   Fresh-state/no-PATH, tampering, concurrency and overrides are tested;
+   all suites pass. Only util-linux's `unshare` is needed alongside plybox.
+   The release ships gVisor's LICENSE; this upstream tag has no separate
+   NOTICE. See [provenance and measurements](third_party/gvisor/README.md).
 3. **Measure steady-state overhead**, gVisor against no sandbox, for two
    workloads: a Python agent loop making HTTPS calls through the proxy, and
    a small HTTP service. Record:

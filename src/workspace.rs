@@ -585,11 +585,15 @@ pub fn ago(when: u64) -> String {
 }
 
 pub fn sessions_base() -> PathBuf {
+    state_base().join("sessions")
+}
+
+pub fn state_base() -> PathBuf {
     let state = std::env::var_os("XDG_STATE_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state")))
         .unwrap_or_else(|| PathBuf::from("/tmp"));
-    state.join("plybox/sessions")
+    state.join("plybox")
 }
 
 fn is_whiteout(meta: &std::fs::Metadata) -> bool {

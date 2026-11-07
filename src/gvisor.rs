@@ -177,7 +177,7 @@ pub fn write_bundle(
 
 /// The runsc invocation. Only the rootfs is overlaid (in memory): an overlay
 /// over every mount would copy the proxy socket up and break it.
-pub fn command(runsc: &Path, session: &Path, bundle: &Bundle, id: &str) -> Command {
+pub fn command(runsc: &Runtime, session: &Path, bundle: &Bundle, id: &str) -> Command {
     // Which host unix-socket operations the sandbox may perform. Only the
     // proxy's socket directory is mounted, so this governs one socket.
     let host_uds = std::env::var("PLYBOX_GVISOR_HOST_UDS").unwrap_or_else(|_| "open".into());
@@ -189,7 +189,7 @@ pub fn command(runsc: &Path, session: &Path, bundle: &Bundle, id: &str) -> Comma
     // The outer network namespace isolates host abstract UNIX sockets too.
     let mut c = Command::new("unshare");
     c.args(["--user", "--map-current-user", "--keep-caps", "--net", "--"])
-        .arg(runsc)
+        .arg(&runsc.path)
         .arg("--rootless")
         .arg("--network=none")
         .arg(format!("--host-uds={host_uds}"))
@@ -201,22 +201,52 @@ pub fn command(runsc: &Path, session: &Path, bundle: &Bundle, id: &str) -> Comma
         .arg("--bundle")
         .arg(&bundle.dir)
         .arg(format!("plybox-{id}"));
+    if let Some(release) = runsc.release {
+        // Environment overrides must not redirect an embedded launch to
+        // unverified helpers (including helpers from a different release).
+        c.env("GVISOR_SIDECAR_BINARIES_DIR", runsc.path.parent().unwrap().join("gvisor-bin"))
+            .env("GVISOR_ENFORCE_RELEASE", release);
+    }
     c
 }
 
-pub fn find_runsc(configured: Option<&str>) -> Result<PathBuf, String> {
+#[derive(serde::Serialize)]
+pub struct Runtime {
+    pub path: PathBuf,
+    source: &'static str,
+    sha512: String,
+    release: Option<&'static str>,
+    payload_sha512: Option<&'static str>,
+    verification_us: u64,
+}
+
+pub fn find_runsc(configured: Option<&str>) -> Result<Runtime, String> {
     const HELP: &str = "run `make tools` in the source checkout and pass --runsc tests/tools/runsc, or install runsc on PATH from https://gvisor.dev/docs/user_guide/install/; to opt in to namespaces instead, pass --isolation ns";
     if let Some(p) = configured {
         let p = PathBuf::from(p);
-        return if p.is_file() { Ok(p) } else { Err(format!("gVisor's runsc not found at {} — {HELP}", p.display())) };
+        return if p.is_file() { external_runtime(&p, "configured") } else { Err(format!("gVisor's runsc not found at {} — {HELP}", p.display())) };
+    }
+    if let Some(runtime) = crate::embedded::prepare()? {
+        return Ok(Runtime {
+            path: runtime.path, source: "embedded", sha512: runtime.sha512.into(),
+            release: crate::embedded::RELEASE, payload_sha512: Some(crate::embedded::PAYLOAD_HASH),
+            verification_us: runtime.verification_us,
+        });
     }
     if let Some(path) = std::env::var_os("PATH") {
         for d in path.to_string_lossy().split(':') {
             let p = Path::new(d).join("runsc");
             if p.is_file() {
-                return Ok(p);
+                return external_runtime(&p, "PATH");
             }
         }
     }
     Err(format!("gVisor's runsc not found — {HELP}"))
+}
+
+fn external_runtime(path: &Path, source: &'static str) -> Result<Runtime, String> {
+    let path = std::fs::canonicalize(path).map_err(|e| format!("runsc {}: {e}", path.display()))?;
+    let mut file = std::fs::File::open(&path).map_err(|e| format!("runsc {}: {e}", path.display()))?;
+    let sha512 = crate::embedded::sha512(&mut file).map_err(|e| format!("runsc checksum: {e}"))?;
+    Ok(Runtime { path, source, sha512, release: None, payload_sha512: None, verification_us: 0 })
 }

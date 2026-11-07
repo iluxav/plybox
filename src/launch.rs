@@ -112,8 +112,9 @@ fn run_box(
     let learning = learn.is_some();
     let caps = crate::storage::Caps::parse(&pol)?;
     let gvisor_tier = pol.isolation == "gvisor";
-    let engine: PathBuf = if gvisor_tier {
-        gvisor::find_runsc(pol.runsc.as_deref())?
+    let runtime = if gvisor_tier { Some(gvisor::find_runsc(pol.runsc.as_deref())?) } else { None };
+    let engine: PathBuf = if let Some(runtime) = &runtime {
+        runtime.path.clone()
     } else {
         which("bwrap").ok_or("bubblewrap (bwrap) not found — plybox uses it for namespaces")?
     };
@@ -230,6 +231,7 @@ fn run_box(
         "start",
         json!({
             "cmd": cmd, "isolation": pol.isolation, "rootfs": pol.fs.rootfs, "workspace": work,
+            "runsc": runtime,
             "image": image.as_ref().map(|i| json!({ "ref": i.meta.reference, "digest": i.meta.digest })),
             "workspace_mode": pol.fs.workspace_mode,
             "allow": pol.net.allow,
@@ -289,7 +291,7 @@ fn run_box(
     inner_argv.extend(cmd.iter().cloned());
     let status = if gvisor_tier {
         let bundle = gvisor::write_bundle(&pol, &work, session, &me, &inner_argv, &env, pol.fs.workspace_mode == "bind")?;
-        let mut c = gvisor::command(&engine, session, &bundle, &session_id);
+        let mut c = gvisor::command(runtime.as_ref().unwrap(), session, &bundle, &session_id);
         enforcer.wrap(&mut c).status().map_err(|e| format!("gVisor (requires unshare and runsc): {e}"))?
     } else {
         let argv = bwrap_argv(&pol, &work, session, &env, &inner_argv, overlay)?;

@@ -21,9 +21,11 @@ trap cleanup EXIT
 
 TARGET="$(rustc -vV | sed -n 's/^host: //p')"
 ( cd "$LAB/probe" && RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --quiet --target "$TARGET" )
-( cd "$ROOT" && cargo build --release --quiet --target x86_64-unknown-linux-musl )
+( cd "$ROOT" && make build >/dev/null )
 PROBE="$LAB/probe/target/$TARGET/release/probe"
 PLYBOX="$ROOT/target/x86_64-unknown-linux-musl/release/plybox"
+"$PLYBOX" version | grep -q '(embedded)'
+export XDG_STATE_HOME="$RUN/state"
 RUNSC="$LAB/tools/runsc"
 "$PLYBOX" pull "$IMAGE" >/dev/null 2>&1 || "$PLYBOX" images | grep -q "^$IMAGE " || { echo "cannot pull $IMAGE" >&2; exit 1; }
 
@@ -66,7 +68,7 @@ hostcheck image.ns
 if [ -x "$RUNSC" ]; then
   echo "running image.gvisor ($IMAGE)" >&2
   prepare image.gvisor
-  "$PLYBOX" run "${COMMON[@]}" --isolation gvisor --runsc "$RUNSC" --session "$RUN/s-gv" --work "$WORK" -- sh -c "$BOXCMD" \
+  "$PLYBOX" run "${COMMON[@]}" --isolation gvisor --session "$RUN/s-gv" --work "$WORK" -- sh -c "$BOXCMD" \
     >"$OUT/image.gvisor.tsv" 2>"$OUT/image.gvisor.err" || echo "  image.gvisor exited nonzero — see $OUT/image.gvisor.err" >&2
   hostcheck image.gvisor
 fi
@@ -84,7 +86,7 @@ LATW="$RUN/latwork"; mkdir -p "$LATW"
 {
   echo "tier	median_ms"
   echo "plybox run --image (ns)	$(cd "$RUN" && for i in $(seq 10); do t "$PLYBOX" run --quiet --isolation ns --image "$IMAGE" --session "$RUN/lat-$i" --work "$LATW" -- /bin/true; done | med)"
-  [ -x "$RUNSC" ] && echo "plybox run --image --isolation gvisor	$(cd "$RUN" && for i in $(seq 10); do t "$PLYBOX" run --quiet --image "$IMAGE" --isolation gvisor --runsc "$RUNSC" --session "$RUN/glat-$i" --work "$LATW" -- /bin/true; done | med)"
+  [ -x "$RUNSC" ] && echo "plybox run --image --isolation gvisor	$(cd "$RUN" && for i in $(seq 10); do t "$PLYBOX" run --quiet --image "$IMAGE" --isolation gvisor --session "$RUN/glat-$i" --work "$LATW" -- /bin/true; done | med)"
 } > "$OUT/latency.tsv"
 echo "$IMAGE" > "$OUT/image.txt"
 

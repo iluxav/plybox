@@ -10,9 +10,9 @@ The first public release.
 
 ### Changed
 
-- New runs and policies default to gVisor. Missing `runsc` fails with install
-  instructions; namespace isolation requires explicit `--isolation ns` or
-  `isolation = "ns"` (operator overrides still take precedence).
+- New runs and policies default to gVisor. Namespace isolation requires
+  explicit `--isolation ns` or `isolation = "ns"` (operator overrides still
+  take precedence).
 - The default gVisor workspace is recorded as `readonly`, with no saved
   copy for `diff`, `apply` or resume. Explicit overlay staging and disk/tmpfs
   caps require the namespace tier; `bind` still writes directly.
@@ -21,6 +21,13 @@ The first public release.
 
 ### Added
 
+- Release builds bundle gVisor `release-20261102.0` and its required helpers,
+  compressed with a pure-Rust decoder. The default tier needs only plybox
+  and util-linux's `unshare`. A private cache verifies every executable's
+  SHA-512 on every launch and atomically repairs damaged files. Configured
+  runtimes still override the bundle; unbundled development builds retain
+  `PATH` lookup. `version` names the release, the start event records the
+  runtime path and hash, and release assets include gVisor's license.
 - `plybox run`: a box with its own namespaces, loopback-only network, a
   seccomp allowlist, Landlock and no capabilities, around any command.
 - A hostname allow-list proxy as the box's only way out; DNS-rebinding

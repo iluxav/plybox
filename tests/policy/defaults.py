@@ -10,6 +10,7 @@ import tempfile
 binary = str(Path(sys.argv[1]).resolve())
 runsc = Path(sys.argv[2]).resolve()
 checks = 0
+embedded = "(embedded)" in subprocess.check_output([binary, "version"], text=True)
 
 
 def checked(name, condition=True):
@@ -44,13 +45,14 @@ with tempfile.TemporaryDirectory(prefix="plybox-defaults.") as tmp:
     def events(name):
         return [json.loads(line) for line in (base / name / "record.jsonl").read_text().splitlines()]
 
-    # No isolation flag or policy: resolve runsc on PATH and record the
+    # No isolation flag or policy: use the default runtime and record the
     # actual read-only mount, never a fictitious persistent overlay.
     start("default", command='echo scratch > /tmp/default; ! touch /work/must-not-write')
     m = meta("default")
     event = next(e for e in events("default") if e["event"] == "start")
     checked("plain run defaults to gVisor with a read-only workspace",
             m["isolation"] == event["isolation"] == m["policy"]["isolation"] == "gvisor"
+            and event["runsc"]["source"] == ("embedded" if embedded else "PATH")
             and m["workspace_mode"] == event["workspace_mode"] == "readonly"
             and not (work / "must-not-write").exists() and not (base / "default/upper").exists())
     checked("gVisor session listing says it has no copy", "no copy (gvisor)" in call("sessions").stdout)
@@ -79,7 +81,13 @@ with tempfile.TemporaryDirectory(prefix="plybox-defaults.") as tmp:
     marker = root / "fallback-ran"
     (fake / "bwrap").write_text(f"#!/bin/sh\necho ran > {marker}\nexit 99\n")
     (fake / "bwrap").chmod(0o755)
+    (fake / "unshare").symlink_to("/usr/bin/unshare")
     for name, opts in [("missing-path", []), ("missing-configured", ["--runsc", root / "missing-runsc"])]:
+        if name == "missing-path" and embedded:
+            start(name, extra_env={"PATH": str(fake)})
+            checked("no runsc on PATH: embedded runtime runs without bwrap",
+                    not marker.exists() and next(e for e in events(name) if e["event"] == "start")["runsc"]["source"] == "embedded")
+            continue
         p = start(name, *opts, ok=False, extra_env={"PATH": str(fake)})
         checked(f"{name}: missing runsc never falls back to bwrap",
                 "runsc not found" in p.stderr and "make tools" in p.stderr

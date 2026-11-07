@@ -87,7 +87,7 @@ impl Enforcer {
     /// Apply the limits to an already-built command. systemd-run mode
     /// returns a new command that wraps it; the others modify it in place.
     pub fn wrap(&self, inner: &mut Command) -> Command {
-        match &self.mode {
+        let mut command = match &self.mode {
             Mode::SystemdRun => {
                 let mut c = Command::new("systemd-run");
                 c.args(["--user", "--scope", "-q", "-p", "OOMPolicy=continue", "-p", "MemorySwapMax=0"]);
@@ -119,7 +119,16 @@ impl Enforcer {
                 c.args(inner.get_args());
                 c
             }
+        };
+        // Preserve the verified embedded runtime's sidecar directory and
+        // release through every limits backend, including systemd scopes.
+        for (name, value) in inner.get_envs() {
+            match value {
+                Some(value) => { command.env(name, value); }
+                None => { command.env_remove(name); }
+            }
         }
+        command
     }
 
     /// Remove the box's cgroup once it is empty.

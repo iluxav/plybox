@@ -90,3 +90,9 @@ plybox --resume rosy-heron --isolation ns --policy examples/claude.toml
 | `learned` | learn mode wrote a policy |
 | `exit` | the box's exit code and the number of workspace changes |
 | `error` | plybox failed during the run |
+
+For gVisor, `start.runsc` records the executable's `path`, `source`
+(`configured`, `embedded`, or `PATH`) and `sha512`. Embedded launches also
+include `release`, `payload_sha512` (the cache directory name), and
+`verification_us` (time spent checking cached executables, excluding
+extraction). Namespace launches record `runsc: null`.

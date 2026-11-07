@@ -15,6 +15,7 @@ mod byte_budget;
 mod storage;
 mod exposure;
 mod gvisor;
+mod embedded;
 mod image;
 mod inner;
 mod landlock_fs;
@@ -51,7 +52,7 @@ const USAGE: &str = "usage: plybox run [--policy FILE] [--image IMAGE] [--isolat
          \x20      plybox version\n\
          \x20      plybox help\n\
          \n\
-         default: gvisor isolation (requires runsc and unshare), read-only workspace.\n\
+         default: gvisor isolation (bundled in releases; requires unshare), read-only workspace.\n\
          --workspace-mode bind writes directly to the workspace.\n\
          --isolation ns opts into bubblewrap: overlay staging, --tmpfs and --disk.\n\
          diff, apply and resume require an existing namespace overlay session.\n\
@@ -175,7 +176,13 @@ fn main() {
                 exit(1)
             }
         },
-        Some("version") | Some("--version") | Some("-V") => println!("plybox {}", env!("CARGO_PKG_VERSION")),
+        Some("version") | Some("--version") | Some("-V") => {
+            println!("plybox {}", env!("CARGO_PKG_VERSION"));
+            match embedded::RELEASE {
+                Some(release) => println!("gVisor {release} (embedded)"),
+                None => println!("gVisor: external (--runsc or PATH)"),
+            }
+        }
         Some("help") | Some("--help") | Some("-h") => println!("{USAGE}"),
         _ => usage(),
     }

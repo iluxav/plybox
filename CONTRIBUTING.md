@@ -17,22 +17,39 @@ make install        # → ~/.local/bin/plybox
 The release binary is static (musl) on purpose: with `--image`, plybox runs
 itself inside the image, so it must not depend on the image's libc.
 
+`make build` and `make install` fetch and embed the pinned gVisor runtime.
+They require Python 3.11+ and curl for the first download. `make tools`
+only fetches it into `tests/tools/`; it does not rebuild plybox. The pin,
+archive checksum and executable checksums live in
+[`third_party/gvisor/manifest.json`](third_party/gvisor/manifest.json).
+The fetch checks the archive against both the committed pin and upstream
+`SHA512SUMS`; the build checks each file again before embedding it.
+
+Plain `cargo build` / `cargo test` remain offline development builds with
+no embedded payload. Use `--runsc tests/tools/runsc` or install runsc on
+`PATH` with those builds. Set `PLYBOX_EMBED_RUNSC="$PWD/tests/tools"` to
+embed it in a direct Cargo invocation. `plybox version` says which kind of
+build it is and names the embedded release. The payload is gzip-compressed
+at build time and decoded with flate2's pure-Rust backend.
+
 ## Test
 
 | Command | What it measures | Time |
 |---|---|---|
 | `make test` | unit tests, including the real seccomp filter | seconds |
-| `make test-policy` | default tier, hostile policies, operator rules; gVisor ownership, writes and limits when runsc is installed | seconds |
+| `make test-policy` | embedded runtime integrity and precedence; default tier, hostile policies, operator rules, gVisor ownership, writes and limits | seconds |
 | `make test-sessions` | namespace session lifecycle, `apply` safety, resume (38 checks) | ~20 s |
 | `make test-limits` | storage, ioctl and traffic caps (local fixtures, no internet) | under a minute |
 | `make test-security` | 41 attacker probes + real workloads, both tiers (network) | ~2 min |
 | `make test-image` | the same inside an OCI image (network) | ~2 min |
 | `make test-all` | everything above | |
 
-`make tools` fetches and verifies gVisor's `runsc` into `tests/tools/` for
-the default-tier checks. Suites that need it skip that tier without it.
-The gVisor checks also need util-linux's `unshare`. CI installs runsc so
-these checks run there too, including a plain run with no isolation flag.
+The `make test-*` integration targets build the embedded binary first.
+The gVisor checks also need util-linux's `unshare`. CI runs the embedded
+runtime checks too, including a fresh state directory with no runsc on
+`PATH`, tampering, concurrent extraction and configured runtime overrides.
+When invoked directly, scripts skip external-runtime checks if their
+`tests/tools/runsc` fixture is absent.
 Namespace-only tests explicitly pass `--isolation ns`. To repeat the
 ownership checks with an image:
 
@@ -54,6 +71,7 @@ src/
   operator.rs     operator rules (the owner's ceiling)
   launch.rs       builds and runs the box (gVisor default, namespace opt-in)
   gvisor.rs       the same as an OCI bundle for runsc
+  embedded.rs     private, hash-verified cache for the bundled runtime
   inner.rs        plybox __inner: in-box forwarder, Landlock, seccomp, exec
   seccomp.rs      the syscall allowlist
   landlock_fs.rs  Landlock rules
@@ -74,7 +92,10 @@ tests/
   sessions/       lifecycle (run.sh) and resume (resume.py)
   limits/         storage, ioctl and traffic caps
   helpers/        test CA, a TLS stand-in for an API, in-box workloads
-  tools/          fetch.sh for gVisor's runsc
+  tools/          verified gVisor download cache (not committed)
+build.rs          verifies and compresses the optional embedded payload
+scripts/          pinned runtime fetcher
+third_party/      runtime manifest, provenance and license
 docs/             user docs; research.md is the measurement log behind the design
 examples/         ready-made policies
 ```

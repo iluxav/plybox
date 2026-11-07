@@ -44,7 +44,7 @@ pub struct Policy {
     /// namespaces via bubblewrap.
     #[serde(default = "default_isolation")]
     pub isolation: String,
-    /// Path to gVisor's `runsc` (default: found on PATH).
+    /// Path to gVisor's `runsc` (default: embedded, or PATH in a dev build).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runsc: Option<String>,
     /// An OCI image used as the box's root filesystem, e.g. "python:3.13-slim".

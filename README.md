@@ -22,8 +22,8 @@ plybox runs a command (an agent, a script, a build) in a box that:
 - **can't change your folder by default.** gVisor mounts it read-only. With
   `--isolation ns`, edits are staged in a copy for you to review and apply.
 
-plybox is a static binary and uses gVisor’s `runsc` by default (installed
-separately for now). No root, no daemon, no Docker, no KVM.
+plybox is a static binary with gVisor’s `runsc` bundled for the default
+isolation tier. No root, no daemon, no Docker, no KVM.
 
 ```console
 $ plybox run --isolation ns --policy claude.toml -- claude -p "fix the failing tests" --dangerously-skip-permissions
@@ -60,19 +60,25 @@ else exists inside the box.
 
 ## Install
 
-**1. Get gVisor's `runsc`**, following the [gVisor installation guide](https://gvisor.dev/docs/user_guide/install/),
-and `unshare` from util-linux. Put `runsc` on `PATH`, or pass `--runsc PATH`.
-From a source checkout, `make tools` fetches the pinned runtime into
-`tests/tools/runsc`; use `--runsc tests/tools/runsc` with that copy.
-Missing runsc is an error; plybox never falls back to namespaces.
-
-**2. Get plybox**, a single static binary:
+**1. Download plybox**, a single static binary. The default tier also needs
+`unshare` from util-linux, normally already installed on Linux:
 
 ```sh
 curl -fsSLo plybox https://github.com/iluxav/plybox/releases/latest/download/plybox-linux-x86_64
 chmod +x plybox && mv plybox ~/.local/bin/
 plybox version
 ```
+
+The binary bundles gVisor `release-20261102.0` under
+[Apache-2.0](third_party/gvisor/LICENSE). On first use, it extracts the
+runtime into `~/.local/state/plybox/runtimes/<payload-sha512>/`
+(`$XDG_STATE_HOME/plybox/runtimes/` when set). Every executable is checked
+against its compiled SHA-512 before each launch; damaged files are replaced,
+and unsafe cache entries refuse the run. No download is needed at runtime.
+
+An explicit `--runsc PATH`, policy `runsc`, or operator-forced `runsc`
+overrides the bundle. `PATH` is searched only by development builds without
+an embedded runtime. plybox never falls back to namespaces.
 
 <details>
 <summary>Build from source instead</summary>
@@ -84,7 +90,7 @@ make install        # → ~/.local/bin/plybox   (make uninstall removes it)
 ```
 </details>
 
-**3. Optional: get bubblewrap 0.11 or newer** for `--isolation ns`,
+**2. Optional: get bubblewrap 0.11 or newer** for `--isolation ns`,
 including staged edits, `diff`/`apply` and resume:
 
 ```sh
@@ -338,7 +344,7 @@ NODE_ENV = "development"
 |---|---|---|---|
 | top | `image` | OCI image to use as the box's root | none: host tools |
 | top | `isolation` | `ns` or `gvisor` | `gvisor` |
-| top | `runsc` | path to gVisor's `runsc` | found on `PATH` |
+| top | `runsc` | path to gVisor's `runsc` | bundled runtime; `PATH` in unbundled dev builds |
 | `[fs]` | `rootfs` | `host` (your `/usr`, read-only) or a directory | `host` |
 | `[fs]` | `workspace` | folder mounted at `/work` | `.` |
 | `[fs]` | `workspace_mode` | `readonly` (gVisor), `overlay` (ns copy), or `bind` (direct) | `auto`: readonly for gVisor, overlay for ns |
@@ -381,7 +387,7 @@ most recent session is used.
 |---|---|
 | `--policy FILE` | load a TOML policy; other flags add to or override it |
 | `--isolation ns\|gvisor` | gVisor’s user-space kernel (default), or explicit namespace opt-in |
-| `--runsc PATH` | gVisor's `runsc` binary |
+| `--runsc PATH` | override the bundled gVisor runtime |
 | `--image IMAGE` | use an OCI image as the box's root (pulled and cached on first use) |
 | `--rootfs host\|DIR` | the host's `/usr` read-only (default), or a directory |
 
@@ -465,6 +471,7 @@ Details, including every record event: [docs/sessions.md](docs/sessions.md).
 |---|---|
 | exit code | the box's own (128 + N if it was killed by signal N); `1` if plybox refused or failed; `2` for a usage error |
 | `~/.local/state/plybox/sessions/` | sessions (`$XDG_STATE_HOME`) |
+| `~/.local/state/plybox/runtimes/` | verified bundled runtime cache (`$XDG_STATE_HOME`) |
 | `~/.local/share/plybox/images/` | pulled images (`$XDG_DATA_HOME`) |
 | `/etc/plybox/operator.toml` | operator rules, if present (`$PLYBOX_OPERATOR` overrides) |
 
@@ -499,9 +506,9 @@ Found a hole? Please report it privately; see [SECURITY.md](SECURITY.md).
 ## Requirements
 
 - Linux on x86_64, with unprivileged user namespaces (kernel 5.11+).
-- For the default gVisor tier: gVisor's
-  [`runsc`](https://gvisor.dev/docs/user_guide/install/) and `unshare` from
-  util-linux (with `--map-current-user` and `--keep-caps` support).
+- For the default gVisor tier: `unshare` from util-linux (with
+  `--map-current-user` and `--keep-caps` support). gVisor is bundled in
+  release binaries and `make build` / `make install` builds.
   This tier does not use bubblewrap. The workload keeps your user ID,
   so bind-mode files remain yours on the host.
 - For the optional `--isolation ns` tier:
@@ -566,4 +573,6 @@ is hostile on purpose, keep the default gVisor tier.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). The binary also bundles gVisor under
+[Apache-2.0](third_party/gvisor/LICENSE); release assets include
+`gvisor-LICENSE`. See [runtime provenance](third_party/gvisor/README.md).
