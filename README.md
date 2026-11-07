@@ -502,9 +502,10 @@ through AppArmor.
 - x86_64 only, for now.
 - Private registries (registry login) aren't supported yet.
 - `--resume` restores files, not processes or an agent's conversation.
-- In the gVisor tier, the workspace is read-only in overlay mode: add
-  `--workspace-mode bind` to write. `--tmpfs` and `--disk` are namespace-tier
-  only.
+- In the gVisor tier the box can't write to the workspace yet, in either
+  mode: writes go to `$HOME` and `/tmp` and vanish at exit. Use the
+  namespace tier when the agent must change files. `--tmpfs` and `--disk`
+  are namespace-tier only.
 
 ## FAQ
 

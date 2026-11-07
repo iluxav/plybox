@@ -160,7 +160,7 @@ fn run_box(
         std::fs::create_dir_all(session.join("work")).map_err(|e| format!("overlay work: {e}"))?;
     }
     if overlay && gvisor_tier && !quiet {
-        eprintln!("plybox: gVisor tier: the workspace is read-only; writes go to $HOME and /tmp and vanish at exit (use --workspace-mode bind to write to the directory)");
+        eprintln!("plybox: gVisor tier: the workspace is read-only; writes go to $HOME and /tmp and vanish at exit");
     }
     meta.image = image.as_ref().map(|i| json!({ "ref": i.meta.reference, "digest": i.meta.digest }));
     workspace::write_meta(session, meta)?;
