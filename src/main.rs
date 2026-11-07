@@ -24,6 +24,7 @@ mod inner;
 mod landlock_fs;
 mod launch;
 mod limits;
+mod operator;
 mod policy;
 mod proxy;
 mod record;

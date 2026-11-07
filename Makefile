@@ -5,7 +5,7 @@
 #   make test             unit tests (seconds)
 #   make test-limits      storage/ioctl/traffic caps (local fixtures, no internet)
 #   make test-sessions    session lifecycle and resume checks (no network, ~20 s)
-#   make test-policy      a hostile policy or flags cannot weaken the box (~5 s)
+#   make test-policy      hostile policy/flags + operator rules (seconds)
 #   make test-security    41 attacker probes + workloads against the binary,
 #                         both tiers (network, ~2 min; gVisor tier needs `make tools`)
 #   make test-image       the same inside an OCI image (network, ~2 min)

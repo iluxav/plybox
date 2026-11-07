@@ -70,6 +70,24 @@ impl Allow {
         Ok(a)
     }
 
+    /// The first destination `inner` allows that `self` does not (an
+    /// operator's host list over a policy's): `*.a.example` sits inside
+    /// `*.example`; a plain name needs a matching name or a wildcard above it.
+    pub fn first_outside(&self, inner: &Allow) -> Option<String> {
+        for (host, ports) in &inner.exact {
+            if let Some(p) = ports.iter().find(|&&p| !self.allows(host, p)) {
+                return Some(format!("{host}:{p}"));
+            }
+        }
+        for (suffix, ports) in &inner.suffix {
+            let covered = |p: u16| self.suffix.iter().any(|(s, sp)| suffix.ends_with(s.as_str()) && sp.contains(&p));
+            if let Some(p) = ports.iter().find(|&&p| !covered(p)) {
+                return Some(format!("*{suffix}:{p}"));
+            }
+        }
+        None
+    }
+
     pub fn allows(&self, host: &str, port: u16) -> bool {
         if self.exact.get(host).is_some_and(|p| p.contains(&port)) {
             return true;

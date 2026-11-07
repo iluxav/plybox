@@ -43,15 +43,15 @@ top, destinations must be plain and may not cover `/plybox`/`/run/plybox`
 2. ~~Print every host path the box can read, every secret file and every
    `map` at startup~~ — **done**: `src/exposure.rs`, printed unless
    `--quiet`, recorded as `exposure` in the start event (sessions check 1e).
-3. **Operator ceilings (for hosting others' code)** — an operator file
-   (e.g. `/etc/plybox/operator.toml`) that plybox enforces whatever the
-   policy or flags say: allowed path roots for `ro_bind`/`workspace`;
-   approved images/registries; the host list `net.allow` must be a subset of;
-   maximum limits; forced `isolation = "gvisor"`; secrets only from
-   operator-named files; `map`, `trust_ca`, `--learn` disabled.
-4. **Until 3 exists, a hosting service must** generate the full policy
-   itself from a small user request (image, command, env, hosts, limits),
-   and never pass user input through as plybox flags.
+3. ~~Operator ceilings~~ — **done**: `src/operator.rs`, read from
+   `$PLYBOX_OPERATOR` or `/etc/plybox/operator.toml`; allowlists (paths,
+   hosts, images, host-sourced secrets, sessions root), `[max]` limits
+   (fill-in, refuse if unenforceable), forced tier; `map`/`trust_ca`/`--learn`
+   refused. `docs/operator.md`; `make test-policy` (26 operator checks).
+   Still open: tenant-from-tenant separation (one uid per tenant, or the
+   service picks paths).
+4. A hosting service without an operator file must still generate the full
+   policy itself and never pass user input through as plybox flags.
 
 ## Later: SDK — run plybox from code
 

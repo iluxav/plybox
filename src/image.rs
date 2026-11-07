@@ -77,6 +77,45 @@ fn parse_ref(spec: &str) -> Result<Ref, String> {
     Ok(Ref { registry, repository, reference })
 }
 
+/// `registry/repository:tag` (or `@sha256:…`): the form an operator's
+/// approved-image list is compared in, so `python:3.13-slim` and
+/// `docker.io/library/python:3.13-slim` are the same image.
+pub fn canonical(spec: &str) -> Result<String, String> {
+    let r = parse_ref(spec)?;
+    let sep = if r.reference.starts_with("sha256:") { '@' } else { ':' };
+    Ok(format!("{}/{}{sep}{}", docker_hub(&r.registry), r.repository, r.reference))
+}
+
+fn docker_hub(registry: &str) -> &str {
+    if ["docker.io", "index.docker.io"].contains(&registry) { "registry-1.docker.io" } else { registry }
+}
+
+/// Whether `spec` is on `list`: exact references, or a prefix ending in `*`
+/// (`python:*` = every python tag, `ghcr.io/acme/*` = everything under it).
+pub fn approved(spec: &str, list: &[String]) -> Result<bool, String> {
+    let want = canonical(spec)?;
+    for entry in list {
+        let hit = match entry.strip_suffix('*') {
+            Some(prefix) => {
+                let prefix = prefix.strip_prefix("docker://").unwrap_or(prefix);
+                let full = match prefix.split_once('/') {
+                    Some((host, rest)) if host.contains('.') || host.contains(':') || host == "localhost" => {
+                        format!("{}/{rest}", docker_hub(host))
+                    }
+                    Some(_) => format!("registry-1.docker.io/{prefix}"),
+                    None => format!("registry-1.docker.io/library/{prefix}"),
+                };
+                want.starts_with(&full)
+            }
+            None => canonical(entry)? == want,
+        };
+        if hit {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 pub fn slug(spec: &str) -> String {
     spec.strip_prefix("docker://")
         .unwrap_or(spec)

@@ -81,6 +81,20 @@ pids = 512
 PATH = "/opt/node/latest/bin:/usr/local/bin:/usr/bin:/bin"
 ```
 
+## Hosting other people's agents
+
+When users write (part of) the policy, put an operator file on the machine:
+`/etc/plybox/operator.toml` (or `$PLYBOX_OPERATOR`). plybox then enforces it
+over every policy and flag:
+
+- approved images and host paths;
+- a host list that `net.allow` must stay inside;
+- secrets only from sources you declare;
+- maximum limits;
+- a forced tier.
+
+Absent lists allow nothing. See [docs/operator.md](docs/operator.md).
+
 ## Resuming a session
 
 `plybox --resume quiet-heron` (also `plybox run --resume quiet-heron`)
@@ -138,7 +152,7 @@ image starts in 4 ms (namespaces) / 18 ms (gVisor). Verified by hand:
 through a symlink (a repo symlink pointing out of the workspace is replaced,
 not followed — the earlier build did follow it, measured), and refuses the
 whole apply if any change would land outside the workspace
-(`make test-sessions`: 26 session checks, 35 resume checks; `make test-policy`: 6 hostile-policy checks).
+(`make test-sessions`: 26 session checks, 35 resume checks; `make test-policy`: 32 hostile-policy and operator checks).
 
 Known gaps: resume restores only workspace files, not processes or agent
 conversation history; x86_64 only; private registries (login) are not supported

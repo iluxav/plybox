@@ -32,6 +32,14 @@ pub fn run(pol: Policy, cmd: Vec<String>, opts: RunOpts) -> Result<i32, String> 
     let RunOpts { session, resume, quiet, learn } = opts;
     let mut pol = pol;
     pol.absolute_paths()?;
+    // The machine owner's ceiling, over whatever the policy and flags said.
+    let operator = match crate::operator::load()? {
+        Some((path, op)) => {
+            let req = crate::operator::Request { learn: learn.is_some(), session: session.as_deref(), resume: resume.is_some() };
+            Some(crate::operator::apply(&op, &path, &mut pol, &req)?)
+        }
+        None => None,
+    };
     let caps = crate::storage::Caps::parse(&pol)?;
     if !["ns", "gvisor"].contains(&pol.isolation.as_str()) || !["overlay", "bind"].contains(&pol.fs.workspace_mode.as_str()) {
         return Err("expected isolation ns|gvisor and workspace_mode overlay|bind".into());
@@ -53,9 +61,13 @@ pub fn run(pol: Policy, cmd: Vec<String>, opts: RunOpts) -> Result<i32, String> 
         }
         (resumed.dir, resumed.guard, resumed.meta, true)
     } else {
+        let explicit = session.is_some();
         let session = session.map(Ok).unwrap_or_else(default_session)?;
         std::fs::create_dir_all(&session).map_err(|e| format!("session {}: {e}", session.display()))?;
         let session = std::fs::canonicalize(&session).map_err(|e| format!("session: {e}"))?;
+        if let (true, Some(op)) = (explicit, &operator) {
+            op.check_session(&session)?;
+        }
         let guard = workspace::lock(&session)?;
         if ["meta.json", "record.jsonl", "upper", "work"].iter().any(|name| session.join(name).symlink_metadata().is_ok()) {
             return Err("session directory already contains a run; use --resume SESSION to continue it".into());
@@ -81,7 +93,7 @@ pub fn run(pol: Policy, cmd: Vec<String>, opts: RunOpts) -> Result<i32, String> 
     meta.exit_code = None;
     workspace::write_meta(&session, &meta)?;
     let record = Arc::new(Record::open(&session.join("record.jsonl")).map_err(|e| format!("record: {e}"))?);
-    let result = run_box(pol, cmd, &session, quiet, learn, &mut meta, &record, resuming);
+    let result = run_box(pol, cmd, &session, quiet, learn, &mut meta, &record, resuming, operator.as_ref());
     // The box is gone: its certificates, socket and bundle are of no further
     // use (every run makes fresh ones). The workspace copy and record stay.
     workspace::remove_run_files(&session);
@@ -101,7 +113,7 @@ fn now_ns() -> u64 {
 #[allow(clippy::too_many_arguments)]
 fn run_box(
     mut pol: Policy, cmd: Vec<String>, session: &Path, quiet: bool, learn: Option<Option<PathBuf>>,
-    meta: &mut workspace::Meta, record: &Arc<Record>, resuming: bool,
+    meta: &mut workspace::Meta, record: &Arc<Record>, resuming: bool, operator: Option<&crate::operator::Applied>,
 ) -> Result<i32, String> {
     let learning = learn.is_some();
     let caps = crate::storage::Caps::parse(&pol)?;
@@ -149,6 +161,14 @@ fn run_box(
     };
     let session_id = session.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "box".into());
     let enforcer = Enforcer::prepare(lim, &session_id);
+    if let Some(op) = operator {
+        if op.limits_required && matches!(enforcer.mode, limits::Mode::None) {
+            return Err(format!(
+                "operator rules ({}): limits are required but cannot be enforced here (no cgroup of our own, no systemd --user)",
+                op.path.display()
+            ));
+        }
+    }
 
     // The proxy: bound before anything else so the box can connect at once.
     // The socket lives in its own small directory, which is the only part of
@@ -212,6 +232,7 @@ fn run_box(
                 "bytes_out": caps.bytes_out, "bytes_in": caps.bytes_in },
             "session": session, "kernel": uname_release(), "resumed": resuming, "run": meta.runs,
             "exposure": crate::exposure::to_json(&exposure),
+            "operator": operator.map(|o| o.path.clone()),
         }),
     );
     if !quiet {
@@ -226,6 +247,9 @@ fn run_box(
             enforcer.describe(),
             workspace::session_name(session)
         );
+        if let Some(op) = operator {
+            eprintln!("plybox:   rules   operator ceiling from {}", op.path.display());
+        }
         for line in crate::exposure::lines(&exposure) {
             eprintln!("plybox:   {line}");
         }
