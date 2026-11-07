@@ -13,15 +13,16 @@
 
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::Arc;
 
 use serde_json::json;
 
+use crate::limits::{self, Enforcer, Limits};
 use crate::policy::Policy;
 use crate::proxy::{Allow, Proxy};
 use crate::record::Record;
 use crate::secrets::{self, Secret, Tls};
+use crate::workspace;
 
 const PROXY_PORT: u16 = 3128;
 
@@ -30,7 +31,31 @@ pub fn run(pol: Policy, cmd: Vec<String>, session: Option<PathBuf>, quiet: bool)
     let work = pol.workspace_abs()?;
     let session = session.map(Ok).unwrap_or_else(default_session)?;
     std::fs::create_dir_all(&session).map_err(|e| format!("session {}: {e}", session.display()))?;
+    let session = std::fs::canonicalize(&session).map_err(|e| format!("session {}: {e}", session.display()))?;
     let record = Arc::new(Record::open(&session.join("record.jsonl")).map_err(|e| format!("record: {e}"))?);
+    let overlay = pol.fs.workspace_mode == "overlay";
+    if overlay {
+        std::fs::create_dir_all(session.join("upper")).map_err(|e| format!("upper: {e}"))?;
+        std::fs::create_dir_all(session.join("work")).map_err(|e| format!("overlay work: {e}"))?;
+    }
+    std::fs::write(
+        session.join("meta.json"),
+        serde_json::to_string_pretty(&json!({
+            "workspace": work, "workspace_mode": pol.fs.workspace_mode, "cmd": cmd,
+            "started": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
+        }))
+        .unwrap(),
+    )
+    .map_err(|e| format!("meta.json: {e}"))?;
+
+    // Limits: a cgroup of our own if the kernel lets us, else systemd-run.
+    let lim = Limits {
+        mem_bytes: pol.limits.mem.as_deref().map(limits::parse_size).transpose()?,
+        pids: pol.limits.pids,
+        cpu: pol.limits.cpu,
+    };
+    let session_id = session.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "box".into());
+    let enforcer = Enforcer::prepare(lim, &session_id);
 
     // The proxy: bound before anything else so the box can connect at once.
     let sock = session.join("proxy.sock");
@@ -54,32 +79,48 @@ pub fn run(pol: Policy, cmd: Vec<String>, session: Option<PathBuf>, quiet: bool)
     record.event(
         "start",
         json!({
-            "cmd": cmd, "rootfs": pol.fs.rootfs, "workspace": work, "allow": pol.net.allow,
+            "cmd": cmd, "rootfs": pol.fs.rootfs, "workspace": work, "workspace_mode": pol.fs.workspace_mode,
+            "allow": pol.net.allow,
             "secrets": secret_list.iter().map(|s| format!("{}@{}", s.name, s.host)).collect::<Vec<_>>(),
+            "limits": { "mem": pol.limits.mem, "pids": pol.limits.pids, "cpu": pol.limits.cpu, "via": enforcer.describe() },
             "session": session, "kernel": uname_release(),
         }),
     );
     if !quiet {
         eprintln!(
-            "plybox: box up — network: {}; secrets: {}; workspace {} at /work; record {}",
+            "plybox: box up — network: {}; secrets: {}; workspace {} at /work ({}); limits: {}; record {}",
             if pol.net.allow.is_empty() { "none".to_string() } else { pol.net.allow.join(", ") },
             secret_list.len(),
             work.display(),
+            pol.fs.workspace_mode,
+            enforcer.describe(),
             session.join("record.jsonl").display()
         );
     }
+    if !enforcer.limits.is_empty() && matches!(enforcer.mode, limits::Mode::None) {
+        eprintln!("plybox: warning: limits requested but {}", enforcer.describe());
+    }
 
     let me = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
-    let argv = bwrap_argv(&pol, &work, &session, &me, &cmd, &secret_list, tls.is_some())?;
-    let status = Command::new(bwrap)
-        .args(&argv)
-        .status()
-        .map_err(|e| format!("bwrap: {e}"))?;
+    let argv = bwrap_argv(&pol, &work, &session, &me, &cmd, &secret_list, tls.is_some(), overlay)?;
+    let status = enforcer.command(&bwrap, &argv).status().map_err(|e| format!("bwrap: {e}"))?;
     let code = status.code().unwrap_or(128 + status_signal(&status));
+    enforcer.finish();
     // The box is gone, so its ends of any tunnels are closed; give the
     // tunnel threads a moment to write their record lines.
     proxy.drain(std::time::Duration::from_secs(2));
-    record.event("exit", json!({ "code": code }));
+    let changed = if overlay {
+        workspace::Session { dir: session.clone(), workspace: work.clone() }.changes().map(|c| c.len()).unwrap_or(0)
+    } else {
+        0
+    };
+    record.event("exit", json!({ "code": code, "workspace_changes": changed }));
+    if !quiet && overlay {
+        eprintln!(
+            "plybox: box exited {code}; {changed} workspace change(s) held in the session — `plybox diff {0}` / `plybox apply {0}`",
+            session.display()
+        );
+    }
     Ok(code)
 }
 
@@ -101,6 +142,7 @@ fn bwrap_argv(
     cmd: &[String],
     secret_list: &[Secret],
     trust_session_ca: bool,
+    overlay: bool,
 ) -> Result<Vec<String>, String> {
     let mut a: Vec<String> = vec![];
     let mut push = |xs: &[&str]| a.extend(xs.iter().map(|s| s.to_string()));
@@ -127,7 +169,15 @@ fn bwrap_argv(
     }
 
     push(&["--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--tmpfs", "/home", "--dir", "/home/box"]);
-    push(&["--bind", &work.to_string_lossy(), "/work"]);
+    if overlay {
+        // The real directory is the read-only lower layer; writes land in
+        // the session's upper layer, for `plybox diff` / `apply`.
+        let upper = session.join("upper");
+        let workdir = session.join("work");
+        push(&["--overlay-src", &work.to_string_lossy(), "--overlay", &upper.to_string_lossy(), &workdir.to_string_lossy(), "/work"]);
+    } else {
+        push(&["--bind", &work.to_string_lossy(), "/work"]);
+    }
     push(&["--ro-bind", &session.to_string_lossy(), "/run/plybox"]);
     push(&["--ro-bind", &me.to_string_lossy(), "/plybox"]);
     for pair in &pol.fs.ro_bind {
@@ -182,17 +232,15 @@ fn bwrap_argv(
     Ok(a)
 }
 
+/// Sessions persist (they hold the record and the workspace's upper layer),
+/// so they live under the state directory, not the runtime one.
 fn default_session() -> Result<PathBuf, String> {
-    let base = std::env::var_os("XDG_RUNTIME_DIR")
-        .map(PathBuf::from)
-        .filter(|p| p.is_dir())
-        .unwrap_or_else(|| PathBuf::from(format!("/tmp/plybox-{}", unsafe { libc::getuid() })));
     let id = format!(
         "{}-{}",
         std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
         std::process::id()
     );
-    Ok(base.join("plybox").join(id))
+    Ok(workspace::sessions_base().join(id))
 }
 
 fn which(name: &str) -> Option<PathBuf> {

@@ -18,19 +18,24 @@
 mod inner;
 mod landlock_fs;
 mod launch;
+mod limits;
 mod policy;
 mod proxy;
 mod record;
 mod seccomp;
 mod secrets;
+mod workspace;
 
 use std::process::exit;
 
 fn usage() -> ! {
     eprintln!(
-        "usage: plybox run [--policy FILE] [--rootfs host|DIR] [--work DIR] [--allow HOST[:PORT]]...\n\
-         \x20                 [--ro-bind HOST:BOX]... [--env K=V | --env K]... [--session DIR] [--quiet]\n\
-         \x20                 -- COMMAND [ARGS...]\n\
+        "usage: plybox run [--policy FILE] [--rootfs host|DIR] [--work DIR] [--workspace-mode overlay|bind]\n\
+         \x20                 [--allow HOST[:PORT]]... [--secret NAME[=VALUE]@HOST]... [--ro-bind HOST:BOX]...\n\
+         \x20                 [--env K=V | --env K]... [--mem SIZE] [--pids N] [--cpu CORES]\n\
+         \x20                 [--session DIR] [--quiet] -- COMMAND [ARGS...]\n\
+         \x20      plybox diff  SESSION|--last     what the box changed in its workspace copy\n\
+         \x20      plybox apply SESSION|--last     copy those changes onto the real workspace\n\
          \x20      plybox version"
     );
     exit(2)
@@ -46,6 +51,27 @@ fn main() {
             });
             match launch::run(pol, cmd, session, quiet) {
                 Ok(code) => exit(code),
+                Err(e) => {
+                    eprintln!("plybox: {e}");
+                    exit(1)
+                }
+            }
+        }
+        Some("diff") | Some("apply") => {
+            let which = args[0].as_str();
+            let target = args.get(1).map(String::as_str).unwrap_or("--last");
+            let session = workspace::Session::open(target).unwrap_or_else(|e| {
+                eprintln!("plybox: {e}");
+                exit(1)
+            });
+            let result = if which == "diff" { session.changes() } else { session.apply() };
+            match result {
+                Ok(changes) => {
+                    workspace::print_changes(&changes);
+                    if which == "apply" {
+                        eprintln!("plybox: applied {} change(s) to {}", changes.len(), session.workspace.display());
+                    }
+                }
                 Err(e) => {
                     eprintln!("plybox: {e}");
                     exit(1)

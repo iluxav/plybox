@@ -37,6 +37,20 @@ pub struct Policy {
     /// it for the value only toward `only`.
     #[serde(default)]
     pub secrets: BTreeMap<String, SecretSpec>,
+    /// Per-box limits: `mem = "512M"`, `pids = 512`, `cpu = 1.5` (cores).
+    #[serde(default)]
+    pub limits: LimitsSpec,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct LimitsSpec {
+    #[serde(default)]
+    pub mem: Option<String>,
+    #[serde(default)]
+    pub pids: Option<u32>,
+    #[serde(default)]
+    pub cpu: Option<f64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -53,9 +67,14 @@ pub struct Fs {
     /// `"host"` or a directory to use as `/`.
     #[serde(default = "default_rootfs")]
     pub rootfs: String,
-    /// Mounted read-write at /work; the box starts there.
+    /// Mounted at /work; the box starts there.
     #[serde(default = "default_workspace")]
     pub workspace: PathBuf,
+    /// `"overlay"` (default): the box writes to a copy; changes reach the
+    /// real directory only with `plybox apply`. `"bind"`: writes go straight
+    /// to the directory.
+    #[serde(default = "default_workspace_mode")]
+    pub workspace_mode: String,
     /// Extra read-only binds, `HOSTPATH:BOXPATH`.
     #[serde(default)]
     pub ro_bind: Vec<String>,
@@ -63,8 +82,12 @@ pub struct Fs {
 
 impl Default for Fs {
     fn default() -> Self {
-        Fs { rootfs: default_rootfs(), workspace: default_workspace(), ro_bind: vec![] }
+        Fs { rootfs: default_rootfs(), workspace: default_workspace(), workspace_mode: default_workspace_mode(), ro_bind: vec![] }
     }
+}
+
+fn default_workspace_mode() -> String {
+    "overlay".into()
 }
 
 fn default_rootfs() -> String {
@@ -125,6 +148,8 @@ pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, Option<PathBuf
     let mut secrets: Vec<String> = vec![];
     let mut trust_ca: Vec<String> = vec![];
     let mut map: Vec<String> = vec![];
+    let mut workspace_mode: Option<String> = None;
+    let (mut mem, mut pids, mut cpu) = (None::<String>, None::<u32>, None::<f64>);
     let mut session: Option<PathBuf> = None;
     let mut quiet = false;
     let mut cmd: Vec<String> = vec![];
@@ -154,6 +179,10 @@ pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, Option<PathBuf
             "--secret" => secrets.push(need("--secret")?),
             "--trust-ca" => trust_ca.push(need("--trust-ca")?),
             "--map" => map.push(need("--map")?),
+            "--workspace-mode" => workspace_mode = Some(need("--workspace-mode")?),
+            "--mem" => mem = Some(need("--mem")?),
+            "--pids" => pids = Some(need("--pids")?.parse().map_err(|_| "--pids: expected a number")?),
+            "--cpu" => cpu = Some(need("--cpu")?.parse().map_err(|_| "--cpu: expected a number of cores")?),
             "--session" => session = Some(PathBuf::from(need("--session")?)),
             "--quiet" => quiet = true,
             "--" => {
@@ -178,6 +207,21 @@ pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, Option<PathBuf
     p.net.trust_ca.extend(trust_ca);
     p.net.map.extend(map);
     p.fs.ro_bind.extend(ro_bind);
+    if let Some(m) = workspace_mode {
+        if m != "overlay" && m != "bind" {
+            return Err(format!("--workspace-mode `{m}`: expected overlay or bind"));
+        }
+        p.fs.workspace_mode = m;
+    }
+    if mem.is_some() {
+        p.limits.mem = mem;
+    }
+    if pids.is_some() {
+        p.limits.pids = pids;
+    }
+    if cpu.is_some() {
+        p.limits.cpu = cpu;
+    }
     p.env.extend(env);
     for spec in secrets {
         let (lhs, host) = spec.rsplit_once('@').ok_or_else(|| format!("--secret `{spec}`: expected NAME@HOST or NAME=VALUE@HOST"))?;

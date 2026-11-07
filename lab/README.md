@@ -211,3 +211,12 @@ against the lab's proven bwrap+boxer box. Slice 1 (2026-11-06): identical on
 every measurable door, 0 kernel / 0 process / 0 network doors, 2 ms start;
 still open: the two planted-file probes and the two resource probes — the
 targets of slices 2–3.
+
+Slices 2–3 (2026-11-07): secrets substituted at the proxy (TLS terminated
+per secret host, verified through curl and node), copy-on-write workspace
+(`plybox diff`/`apply`; the planted files stay in the session), and cgroup
+limits (direct when the kernel allows, else `systemd-run --user`). Result:
+**0 open doors of 41** for the binary, all 7 workloads correct, 3 ms start.
+Untested so far: `apply` of a deletion (overlay whiteout) — the smoke test
+that would have covered it was blocked by a safety check on `rm` in a
+script and was not run.

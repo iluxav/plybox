@@ -61,6 +61,7 @@ echo "running plybox ($("$PLYBOX" version))" >&2
 prepare plybox
 SESSION="$RUN/session"
 "$PLYBOX" run --quiet --session "$SESSION" --work "$WORK" \
+  --mem 512M --pids 512 \
   --allow api.anthropic.com --allow '*.anthropic.com' --allow registry.npmjs.org \
   --allow "$SECRET_HOST" --allow "$OTHER_HOST" \
   --secret "ANTHROPIC_API_KEY=$REAL@$SECRET_HOST" --trust-ca "$RUN/ca/ca.pem" \
@@ -73,6 +74,8 @@ SESSION="$RUN/session"
   || echo "  plybox exited nonzero — see $OUT/plybox.err" >&2
 hostcheck plybox
 cp "$SESSION/record.jsonl" "$OUT/record.jsonl" 2>/dev/null || true
+# What the box changed, as the operator would review it before `apply`.
+"$PLYBOX" diff "$SESSION" > "$OUT/diff.txt" 2>&1 || true
 
 # Host-side secret checks: the real value must appear nowhere the box could
 # write, and the box's copy of the variable must be the placeholder.

@@ -118,6 +118,15 @@ def main():
             for l in lines[:10]:
                 print(f"    {l[:160]}")
 
+    diff = out / "diff.txt"
+    if diff.exists():
+        lines = [l for l in diff.read_text().splitlines() if l.strip()]
+        print(f"\n## `plybox diff` — what the box changed, held in the session ({len(lines)} entries)\n")
+        for l in lines[:15]:
+            print(f"    {l}")
+        if len(lines) > 15:
+            print(f"    … {len(lines) - 15} more")
+
     lat = out / "latency.tsv"
     if lat.exists():
         print("\n## Start latency (median of 10, ms)\n")
