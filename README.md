@@ -20,6 +20,12 @@ Run an AI agent in a box whose only way out is through plybox.
   kernel allows, else through `systemd-run --user`).
 - **Record**: every connection decision, every substitution, start and
   exit — one JSON line each, kept with the session.
+- **Images instead of host tools**: `--image python:3.13-slim` (or `node:22`,
+  an ffmpeg image, your own) makes an OCI image the box's `/`. plybox pulls
+  it itself — no Docker — verifies every layer's sha256, refuses layers that
+  try to write, delete or hardlink outside the image, and caches it. The
+  image stays read-only and untouched; many boxes share one copy. A bare
+  machine needs only plybox and bubblewrap.
 - **Second kernel, when the code itself is untrusted**: `--isolation gvisor`
   runs the same box under gVisor's user-space kernel (rootless, no KVM),
   with a real OCI bundle — the same mounts, no host filesystem, one socket.
@@ -31,7 +37,13 @@ Anthropic's sandbox-runtime and Greywall use; everything around it is
 plybox.
 
 ```sh
-cd plybox && cargo build --release
+cd plybox && cargo build --release --target x86_64-unknown-linux-musl   # static: runs in any image
+
+# Tools from an image — nothing installed on the host:
+plybox run --image python:3.13-slim --allow pypi.org -- python3 script.py
+plybox run --image node:22-slim --allow registry.npmjs.org -- sh -c 'npm install && node index.js'
+plybox run --image mwader/static-ffmpeg:7.1 -- /ffmpeg -i in.mov out.mp4
+
 ANTHROPIC_API_KEY=sk-… plybox run --secret ANTHROPIC_API_KEY@api.anthropic.com \
   --allow api.anthropic.com --allow registry.npmjs.org --mem 2G --pids 512 \
   -- claude -p "fix the tests"
@@ -72,12 +84,23 @@ its host and withheld from another; 3 ms start (namespaces), 19 ms
 the next one; the record marks those connections `learned`, and the run
 itself is loudly not contained.
 
+Images (`lab/image/run.sh`): inside `python:3.13-slim` the same suite reads
+**0 open doors** in both tiers, the network workloads pass, and a cached
+image starts in 3 ms (namespaces) / 18 ms (gVisor). Verified by hand:
+`node:22-slim` (npm install + node), `mwader/static-ffmpeg:7.1` (a
+`FROM scratch` image — no shell, no libc — rendering and probing a video).
+
 Known gaps: `apply` of a deletion is untested; `ioctl` is allowed for every
-request code; x86_64 only; exfiltration *through an allowed host* is not
-something any sandbox stops — keep the allow list short.
+request code; x86_64 only; private registries (login) are not supported
+yet; under gVisor, an extra `--ro-bind` target missing from an image is
+created inside the cached image; exfiltration *through an allowed host* is
+not something any sandbox stops — keep the allow list short.
 
 Everything claimed here has a probe in `lab/`. Read `lab/README.md`.
 
-Requires: Linux x86_64, bubblewrap, unprivileged user namespaces; for
-limits on a desktop, a user systemd session; for `--isolation gvisor`,
-gVisor's `runsc` (`lab/tools/fetch.sh` shows how to fetch and verify it).
+Requires: Linux x86_64, bubblewrap, unprivileged user namespaces (kernel
+5.11+ for unprivileged overlayfs); for limits on a desktop, a user systemd
+session; for `--isolation gvisor`, gVisor's `runsc` (`lab/tools/fetch.sh`
+shows how to fetch and verify it). Use the static musl build: images run
+`plybox` inside themselves, so it must not depend on their libc (plybox
+refuses `--image` with a dynamically linked build and says why).

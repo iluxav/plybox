@@ -47,6 +47,10 @@ pub struct Policy {
     /// Path to gVisor's `runsc` (default: found on PATH).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runsc: Option<String>,
+    /// An OCI image used as the box's root filesystem, e.g. "python:3.13-slim".
+    /// Pulled on first use (no Docker needed); overrides `fs.rootfs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
 }
 
 fn default_isolation() -> String {
@@ -65,6 +69,7 @@ impl Default for Policy {
             limits: LimitsSpec::default(),
             isolation: default_isolation(),
             runsc: None,
+            image: None,
         }
     }
 }
@@ -197,6 +202,7 @@ pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, RunOpts), Stri
     let mut workspace_mode: Option<String> = None;
     let (mut mem, mut pids, mut cpu) = (None::<String>, None::<u32>, None::<f64>);
     let (mut isolation, mut runsc) = (None::<String>, None::<String>);
+    let mut image: Option<String> = None;
     let mut opts = RunOpts::default();
     let mut cmd: Vec<String> = vec![];
 
@@ -237,6 +243,7 @@ pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, RunOpts), Stri
             "--workspace-mode" => workspace_mode = Some(need("--workspace-mode")?),
             "--isolation" => isolation = Some(need("--isolation")?),
             "--runsc" => runsc = Some(need("--runsc")?),
+            "--image" => image = Some(need("--image")?),
             "--mem" => mem = Some(need("--mem")?),
             "--pids" => pids = Some(need("--pids")?.parse().map_err(|_| "--pids: expected a number")?),
             "--cpu" => cpu = Some(need("--cpu")?.parse().map_err(|_| "--cpu: expected a number of cores")?),
@@ -278,6 +285,9 @@ pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, RunOpts), Stri
     }
     if runsc.is_some() {
         p.runsc = runsc;
+    }
+    if image.is_some() {
+        p.image = image;
     }
     if mem.is_some() {
         p.limits.mem = mem;

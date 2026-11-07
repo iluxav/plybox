@@ -242,3 +242,16 @@ with the observed hosts merged into `net.allow`, secrets by name only. The
 run announces loudly that it is not contained. Smoke: a learn run reached
 two hosts and wrote them; the next run with `--policy` allowed those two
 and refused a third. The full suite is unchanged: 0 open doors, both tiers.
+
+Images (2026-11-07, `image/run.sh`): `plybox pull` / `--image` make an OCI
+image the box's root, no Docker. Every layer is sha256-verified; paths that
+leave the rootfs (`..`, through a planted symlink, a hardlink to a host
+file) are refused before anything is written or deleted — ply's importer
+lacked those checks — and setuid bits are dropped (unit tests in
+`plybox/src/image.rs`). Inside `python:3.13-slim`: **0 open doors** in both
+tiers, workloads pass, 3 ms / 18 ms start once cached. Facts learned:
+bubblewrap cannot create mount points in a read-only image (fixed with
+`--tmp-overlay /` over the image); the binary must be static to run inside
+images (static glibc broke DNS on the host side; static musl works, with
+the host gcc for ring/zstd); gVisor creates missing mount points in the
+image directory itself (plybox now creates its fixed ones once, at pull).

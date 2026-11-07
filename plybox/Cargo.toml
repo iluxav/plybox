@@ -17,6 +17,13 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 rustls-pki-types = { version = "1", features = ["std"] }
 rustls-native-certs = "0.8"
 rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"] }
+# Pulling OCI images (plybox pull / --image): registry v2 over HTTPS, layer
+# decompression, tar extraction, digest verification. Same stack ply uses.
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+flate2 = "1"
+zstd = "0.13"
+tar = "0.4"
+sha2 = "0.10"
 
 [profile.release]
 opt-level = "s"

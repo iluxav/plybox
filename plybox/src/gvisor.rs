@@ -45,9 +45,21 @@ pub fn write_bundle(
     workspace_writable: bool,
 ) -> Result<Bundle, String> {
     let dir = session.join("bundle");
-    let rootfs = dir.join("rootfs");
-    for d in ["usr", "etc", "proc", "dev", "tmp", "home/box", "work", "run/plybox", "opt", "sys"] {
-        std::fs::create_dir_all(rootfs.join(d)).map_err(|e| format!("bundle {d}: {e}"))?;
+    // Host tools: a skeleton root in the session, the host's /usr bound in.
+    // An image: the image itself is the root (read-only; gVisor overlays it
+    // in memory, which is also where the mount points get created).
+    let host_root = pol.fs.rootfs == "host";
+    let rootfs = if host_root {
+        dir.join("rootfs")
+    } else {
+        std::fs::canonicalize(&pol.fs.rootfs).map_err(|e| format!("rootfs {}: {e}", pol.fs.rootfs))?
+    };
+    if host_root {
+        for d in ["usr", "etc", "proc", "dev", "tmp", "home/box", "work", "run/plybox", "opt", "sys"] {
+            std::fs::create_dir_all(rootfs.join(d)).map_err(|e| format!("bundle {d}: {e}"))?;
+        }
+    } else {
+        std::fs::create_dir_all(&dir).map_err(|e| format!("bundle: {e}"))?;
     }
     let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
 
@@ -76,11 +88,11 @@ pub fn write_bundle(
                 }
             }
         }
-        dir_root => {
-            // A user-supplied root: bind it whole, read-only; the overlay
-            // makes it writable in memory.
-            let d = std::fs::canonicalize(dir_root).map_err(|e| format!("rootfs {dir_root}: {e}"))?;
-            ro_bind(&mut mounts, &d.to_string_lossy(), "/");
+        _ => {
+            // The image is the root (see above); only the account files are
+            // swapped for the ones that know the box's uid.
+            ro_bind(&mut mounts, &session.join("passwd").to_string_lossy(), "/etc/passwd");
+            ro_bind(&mut mounts, &session.join("group").to_string_lossy(), "/etc/group");
         }
     }
 
@@ -98,14 +110,20 @@ pub fn write_bundle(
     ro_bind(&mut mounts, &session.to_string_lossy(), "/run/plybox");
     // The socket directory, writable: a unix-socket connect needs write
     // permission, and gVisor enforces that on read-only mounts.
-    let _ = std::fs::create_dir_all(rootfs.join("run/plybox/sock"));
+    if host_root {
+        let _ = std::fs::create_dir_all(rootfs.join("run/plybox/sock"));
+    }
     mounts.push(json!({ "destination": "/run/plybox/sock", "type": "bind",
                         "source": session.join("sock"), "options": ["rbind", "rw"] }));
-    let _ = std::fs::write(rootfs.join("plybox"), b"");
+    if host_root {
+        let _ = std::fs::write(rootfs.join("plybox"), b"");
+    }
     ro_bind(&mut mounts, &me.to_string_lossy(), "/plybox");
     for pair in &pol.fs.ro_bind {
         let (h, b) = pair.split_once(':').ok_or_else(|| format!("ro_bind `{pair}`: expected HOST:BOX"))?;
-        let _ = std::fs::create_dir_all(rootfs.join(b.trim_start_matches('/')));
+        if host_root {
+            let _ = std::fs::create_dir_all(rootfs.join(b.trim_start_matches('/')));
+        }
         ro_bind(&mut mounts, h, b);
     }
 
@@ -129,7 +147,7 @@ pub fn write_bundle(
             "rlimits": rlimits,
             "capabilities": { "bounding": [], "effective": [], "inheritable": [], "permitted": [], "ambient": [] }
         },
-        "root": { "path": rootfs, "readonly": false },
+        "root": { "path": rootfs, "readonly": !host_root },
         "mounts": mounts,
         "linux": {
             "namespaces": [

@@ -1,0 +1,10 @@
+# The shipped plybox is a static musl binary: the same file runs the
+# supervisor on the host AND `plybox __inner` inside any image (Alpine/musl,
+# Debian/glibc, distroless), because it depends on no libc of the image.
+#
+#   cargo build --release --target x86_64-unknown-linux-musl
+#
+# ring and zstd-sys compile C; without a musl cross gcc installed, the host
+# gcc works for them. An explicitly set CC_x86_64_unknown_linux_musl wins.
+[env]
+CC_x86_64_unknown_linux_musl = { value = "gcc", force = false }

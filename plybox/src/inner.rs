@@ -40,11 +40,13 @@ extern "C" fn forward(sig: libc::c_int) {
 
 pub fn main(args: &[String]) -> Result<i32, String> {
     let mut sock: Option<PathBuf> = None;
+    let mut ro_root = false;
     let mut cmd: Vec<String> = vec![];
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--proxy-sock" => sock = it.next().map(PathBuf::from),
+            "--ro-root" => ro_root = true,
             "--" => {
                 cmd = it.cloned().collect();
                 break;
@@ -62,7 +64,9 @@ pub fn main(args: &[String]) -> Result<i32, String> {
     }
     let listener = TcpListener::bind(LISTEN).map_err(|e| format!("forwarder bind {LISTEN}: {e}"))?;
     let program = seccomp::program()?;
-    let ruleset = landlock_fs::build(RO, RW)?;
+    // With an image as the root, all of it is the image (read-only to the
+    // workload); with host tools, only the directories plybox bound.
+    let ruleset = landlock_fs::build(if ro_root { &["/"] } else { RO }, RW)?;
 
     let prog = CString::new(cmd[0].as_str()).unwrap();
     let argv: Vec<CString> = cmd.iter().map(|s| CString::new(s.as_str()).unwrap()).collect();

@@ -19,9 +19,9 @@ trap cleanup EXIT
 
 TARGET="$(rustc -vV | sed -n 's/^host: //p')"
 ( cd "$LAB/probe" && RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --quiet --target "$TARGET" )
-( cd "$ROOT/plybox" && cargo build --release --quiet )
+( cd "$ROOT/plybox" && cargo build --release --quiet --target x86_64-unknown-linux-musl )
 PROBE="$LAB/probe/target/$TARGET/release/probe"
-PLYBOX="$ROOT/plybox/target/release/plybox"
+PLYBOX="$ROOT/plybox/target/x86_64-unknown-linux-musl/release/plybox"
 
 LO_PORT=47871; LAN_PORT=47872
 LAN_IP="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p')"

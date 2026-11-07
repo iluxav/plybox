@@ -18,6 +18,7 @@ use std::sync::Arc;
 use serde_json::json;
 
 use crate::gvisor;
+use crate::image;
 use crate::limits::{self, Enforcer, Limits};
 use crate::policy::{Policy, RunOpts};
 use crate::proxy::{Allow, Proxy};
@@ -29,6 +30,7 @@ const PROXY_PORT: u16 = 3128;
 
 pub fn run(pol: Policy, cmd: Vec<String>, opts: RunOpts) -> Result<i32, String> {
     let RunOpts { session, quiet, learn } = opts;
+    let mut pol = pol;
     let learning = learn.is_some();
     let gvisor_tier = pol.isolation == "gvisor";
     let engine: PathBuf = if gvisor_tier {
@@ -36,6 +38,21 @@ pub fn run(pol: Policy, cmd: Vec<String>, opts: RunOpts) -> Result<i32, String> 
     } else {
         which("bwrap").ok_or("bubblewrap (bwrap) not found — plybox uses it for namespaces")?
     };
+    let me = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
+
+    // An image is the box's root filesystem; pulled once, then cached.
+    let image = match pol.image.clone() {
+        Some(r) => {
+            let img = image::ensure(&r, false, quiet)?;
+            pol.fs.rootfs = img.rootfs.to_string_lossy().into_owned();
+            Some(img)
+        }
+        None => None,
+    };
+    let own_root = pol.fs.rootfs != "host";
+    if own_root {
+        require_static(&me)?;
+    }
     let work = pol.workspace_abs()?;
     let session = session.map(Ok).unwrap_or_else(default_session)?;
     std::fs::create_dir_all(&session).map_err(|e| format!("session {}: {e}", session.display()))?;
@@ -53,6 +70,7 @@ pub fn run(pol: Policy, cmd: Vec<String>, opts: RunOpts) -> Result<i32, String> 
         session.join("meta.json"),
         serde_json::to_string_pretty(&json!({
             "workspace": work, "workspace_mode": pol.fs.workspace_mode, "cmd": cmd,
+            "image": image.as_ref().map(|i| json!({ "ref": i.meta.reference, "digest": i.meta.digest })),
             "started": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
         }))
         .unwrap(),
@@ -116,6 +134,7 @@ pub fn run(pol: Policy, cmd: Vec<String>, opts: RunOpts) -> Result<i32, String> 
         "start",
         json!({
             "cmd": cmd, "isolation": pol.isolation, "rootfs": pol.fs.rootfs, "workspace": work,
+            "image": image.as_ref().map(|i| json!({ "ref": i.meta.reference, "digest": i.meta.digest })),
             "workspace_mode": if gvisor_tier && overlay { "read-only (gvisor tier)" } else { pol.fs.workspace_mode.as_str() },
             "allow": pol.net.allow,
             "secrets": secret_list.iter().map(|s| format!("{}@{}", s.name, s.host)).collect::<Vec<_>>(),
@@ -125,8 +144,9 @@ pub fn run(pol: Policy, cmd: Vec<String>, opts: RunOpts) -> Result<i32, String> 
     );
     if !quiet {
         eprintln!(
-            "plybox: box up ({}) — network: {}; secrets: {}; workspace {} at /work ({}); limits: {}; record {}",
+            "plybox: box up ({}{}) — network: {}; secrets: {}; workspace {} at /work ({}); limits: {}; record {}",
             pol.isolation,
+            image.as_ref().map(|i| format!(", image {}", i.meta.reference)).unwrap_or_default(),
             if pol.net.allow.is_empty() { "none".to_string() } else { pol.net.allow.join(", ") },
             secret_list.len(),
             work.display(),
@@ -139,13 +159,22 @@ pub fn run(pol: Policy, cmd: Vec<String>, opts: RunOpts) -> Result<i32, String> 
         eprintln!("plybox: warning: limits requested but {}", enforcer.describe());
     }
 
-    let me = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
-    let env = box_env(&pol, &secret_list, tls.is_some());
-    let inner_argv: Vec<String> = ["/plybox", "__inner", "--proxy-sock", "/run/plybox/sock/proxy.sock", "--"]
+    let image_env: &[String] = image.as_ref().map(|i| i.meta.env.as_slice()).unwrap_or(&[]);
+    let env = box_env(&pol, &secret_list, tls.is_some(), image_env);
+    if own_root {
+        write_accounts(&pol.fs.rootfs, &session)?;
+    }
+    let mut inner_argv: Vec<String> = ["/plybox", "__inner", "--proxy-sock", "/run/plybox/sock/proxy.sock"]
         .iter()
         .map(|s| s.to_string())
-        .chain(cmd.iter().cloned())
         .collect();
+    if own_root {
+        // The whole root is an image: Landlock may read all of it, but write
+        // only /work, /tmp, $HOME and /dev, as in host mode.
+        inner_argv.push("--ro-root".into());
+    }
+    inner_argv.push("--".into());
+    inner_argv.extend(cmd.iter().cloned());
     let status = if gvisor_tier {
         let bundle = gvisor::write_bundle(&pol, &work, &session, &me, &inner_argv, &env, !overlay)?;
         let mut c = gvisor::command(&engine, &session, &bundle, &session_id);
@@ -212,9 +241,60 @@ fn parse_maps(entries: &[String]) -> Result<std::collections::HashMap<String, st
     Ok(m)
 }
 
-/// The environment inside the box: tight defaults, the policy's values, the
-/// session CA (when TLS is terminated) and, last, the secret placeholders.
-fn box_env(pol: &Policy, secret_list: &[Secret], trust_session_ca: bool) -> Vec<(String, String)> {
+/// A rootfs of its own runs `/plybox __inner` from inside it, so the binary
+/// must not need the image's libc. A dynamically linked plybox names its
+/// loader (`ld-linux…`/`ld-musl…`) in its first page; a static one does not.
+fn require_static(me: &Path) -> Result<(), String> {
+    let mut head = vec![0u8; 8192];
+    let n = std::fs::File::open(me).and_then(|mut f| std::io::Read::read(&mut f, &mut head)).unwrap_or(0);
+    let head = &head[..n];
+    let dynamic = head.windows(7).any(|w| w == b"ld-linu") || head.windows(7).any(|w| w == b"ld-musl");
+    if dynamic {
+        return Err(format!(
+            "{} is dynamically linked, and a box with its own root filesystem (--image/--rootfs) runs plybox inside that image — \
+             use the static build: cargo build --release --target x86_64-unknown-linux-musl",
+            me.display()
+        ));
+    }
+    Ok(())
+}
+
+/// The image's account files plus one entry for the box's uid, so tools that
+/// look the user up (git, npm, `os.userInfo()`, `whoami`) find one.
+fn write_accounts(rootfs: &str, session: &Path) -> Result<(), String> {
+    let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
+    let root = Path::new(rootfs);
+    let read = |rel: &str| std::fs::read_to_string(root.join(rel)).unwrap_or_default();
+    let mut passwd = read("etc/passwd");
+    if !passwd.lines().any(|l| l.split(':').nth(2) == Some(&uid.to_string())) {
+        if !passwd.is_empty() && !passwd.ends_with('\n') {
+            passwd.push('\n');
+        }
+        passwd.push_str(&format!("box:x:{uid}:{gid}:plybox:/home/box:/bin/sh\n"));
+    }
+    let mut group = read("etc/group");
+    if !group.lines().any(|l| l.split(':').nth(2) == Some(&gid.to_string())) {
+        if !group.is_empty() && !group.ends_with('\n') {
+            group.push('\n');
+        }
+        group.push_str(&format!("box:x:{gid}:\n"));
+    }
+    std::fs::write(session.join("passwd"), passwd).map_err(|e| format!("passwd: {e}"))?;
+    std::fs::write(session.join("group"), group).map_err(|e| format!("group: {e}"))?;
+    Ok(())
+}
+
+/// Image variables the box keeps from the image's config: everything except
+/// the ones plybox owns (identity and the proxy).
+const PLYBOX_OWNED_ENV: &[&str] = &[
+    "HOME", "USER", "HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy",
+    "NO_PROXY", "no_proxy", "ALL_PROXY", "all_proxy", "NODE_USE_ENV_PROXY",
+];
+
+/// The environment inside the box: tight defaults, the image's own variables
+/// (PATH and friends), the policy's values, the session CA (when TLS is
+/// terminated) and, last, the secret placeholders.
+fn box_env(pol: &Policy, secret_list: &[Secret], trust_session_ca: bool, image_env: &[String]) -> Vec<(String, String)> {
     let proxy_url = format!("http://127.0.0.1:{PROXY_PORT}");
     let mut env: Vec<(String, String)> = vec![
         ("HOME".into(), "/home/box".into()),
@@ -234,6 +314,13 @@ fn box_env(pol: &Policy, secret_list: &[Secret], trust_session_ca: bool) -> Vec<
         env.retain(|(ek, _)| ek != k);
         env.push((k.to_string(), v.to_string()));
     };
+    for pair in image_env {
+        if let Some((k, v)) = pair.split_once('=') {
+            if !PLYBOX_OWNED_ENV.contains(&k) {
+                set(&mut env, k, v);
+            }
+        }
+    }
     for (k, v) in &pol.env {
         set(&mut env, k, v);
     }
@@ -279,8 +366,13 @@ fn bwrap_argv(
             "--ro-bind-try", "/etc/localtime", "/etc/localtime",
         ]),
         dir => {
+            // The image is the read-only lower layer of an in-memory root:
+            // mount points can be created on top, the image stays untouched,
+            // and many boxes share one cached copy.
             let dir = std::fs::canonicalize(dir).map_err(|e| format!("rootfs {dir}: {e}"))?;
-            push(&["--ro-bind", &dir.to_string_lossy(), "/"]);
+            push(&["--overlay-src", &dir.to_string_lossy(), "--tmp-overlay", "/"]);
+            push(&["--ro-bind", &session.join("passwd").to_string_lossy(), "/etc/passwd"]);
+            push(&["--ro-bind", &session.join("group").to_string_lossy(), "/etc/group"]);
         }
     }
 

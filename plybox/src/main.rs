@@ -16,6 +16,7 @@
 //!         └─ the workload: landlock + no_new_privs + seccomp, then exec
 
 mod gvisor;
+mod image;
 mod inner;
 mod landlock_fs;
 mod launch;
@@ -31,11 +32,13 @@ use std::process::exit;
 
 fn usage() -> ! {
     eprintln!(
-        "usage: plybox run [--policy FILE] [--isolation ns|gvisor] [--runsc PATH]\n\
+        "usage: plybox run [--policy FILE] [--image IMAGE] [--isolation ns|gvisor] [--runsc PATH]\n\
          \x20                 [--rootfs host|DIR] [--work DIR] [--workspace-mode overlay|bind]\n\
          \x20                 [--allow HOST[:PORT]]... [--secret NAME[=VALUE]@HOST]... [--ro-bind HOST:BOX]...\n\
          \x20                 [--env K=V | --env K]... [--mem SIZE] [--pids N] [--cpu CORES]\n\
          \x20                 [--learn [FILE]] [--session DIR] [--quiet] -- COMMAND [ARGS...]\n\
+         \x20      plybox pull IMAGE               fetch an OCI image (e.g. python:3.13-slim) for --image\n\
+         \x20      plybox images                   list pulled images\n\
          \x20      plybox diff  SESSION|--last     what the box changed in its workspace copy\n\
          \x20      plybox apply SESSION|--last     copy those changes onto the real workspace\n\
          \x20      plybox version"
@@ -57,6 +60,22 @@ fn main() {
                     eprintln!("plybox: {e}");
                     exit(1)
                 }
+            }
+        }
+        Some("pull") => {
+            let Some(spec) = args.get(1) else { usage() };
+            let dir = image::images_base().join(image::slug(spec));
+            match image::pull(spec, &dir, false) {
+                Ok(img) => println!("{}  {}", img.meta.reference, img.meta.digest),
+                Err(e) => {
+                    eprintln!("plybox: {e}");
+                    exit(1)
+                }
+            }
+        }
+        Some("images") => {
+            for m in image::list() {
+                println!("{:<40} {}", m.reference, &m.digest[..19.min(m.digest.len())]);
             }
         }
         Some("diff") | Some("apply") => {
