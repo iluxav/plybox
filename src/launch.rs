@@ -124,7 +124,18 @@ fn run_box(
         which("bwrap").ok_or("bubblewrap (bwrap) not found — plybox uses it for namespaces")?
     };
     if !gvisor_tier && caps.scratch_mount_bytes().is_some() {
-        require_bwrap_tmpfs_size(&engine)?;
+        require_bwrap(&engine, (0, 9), "--tmpfs and --disk need bubblewrap 0.9 or newer (for its --size option)")?;
+    }
+    // The workspace copy and an image root are overlay mounts, which
+    // bubblewrap gained in 0.10 (Ubuntu 24.04 ships 0.9, Debian 12 0.8).
+    if !gvisor_tier && (pol.fs.workspace_mode == "overlay" || pol.image.is_some() || pol.fs.rootfs != "host") {
+        require_bwrap(
+            &engine,
+            (0, 10),
+            "the workspace copy (the default --workspace-mode overlay), --image and --rootfs need bubblewrap 0.10 or newer \
+             (for its overlay mounts); install a newer one (https://github.com/iluxav/plybox#requirements) or use \
+             --workspace-mode bind with the host's tools",
+        )?;
     }
     let me = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
 
@@ -572,7 +583,9 @@ fn bind_proxy_socket(dir: &Path, sock: &Path) -> Result<(UnixListener, Option<st
 /// `--tmpfs` and `--disk` size the box's scratch mounts with bwrap's `--size`,
 /// added in bubblewrap 0.9.0. Older builds (Debian 12: 0.8, Ubuntu 22.04: 0.6)
 /// reject it as an unknown option; say what is wrong instead.
-fn require_bwrap_tmpfs_size(bwrap: &Path) -> Result<(), String> {
+/// Refuse, with `why`, a bubblewrap older than `min`, rather than leave it to
+/// fail later with its own "Unknown option".
+fn require_bwrap(bwrap: &Path, min: (u32, u32), why: &str) -> Result<(), String> {
     let out = std::process::Command::new(bwrap)
         .arg("--version")
         .output()
@@ -580,12 +593,9 @@ fn require_bwrap_tmpfs_size(bwrap: &Path) -> Result<(), String> {
     let text = String::from_utf8_lossy(&out.stdout);
     let version = text.split_whitespace().last().unwrap_or("");
     match parse_major_minor(version) {
-        Some(v) if v >= (0, 9) => Ok(()),
-        Some(_) => Err(format!(
-            "--tmpfs and --disk need bubblewrap 0.9 or newer (for its --size option); {} is {version}",
-            bwrap.display()
-        )),
-        // Unrecognised output: let bwrap itself accept or refuse --size.
+        Some(v) if v >= min => Ok(()),
+        Some(_) => Err(format!("{why}; {} is {version}", bwrap.display())),
+        // Unrecognised output: let bwrap itself accept or refuse the option.
         None => Ok(()),
     }
 }

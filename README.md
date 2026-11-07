@@ -60,13 +60,28 @@ else exists inside the box.
 
 ## Install
 
-**1. Get bubblewrap**, which plybox uses for Linux namespaces:
+**1. Get bubblewrap 0.10 or newer**, which plybox uses for Linux namespaces:
 
 ```sh
-sudo apt install bubblewrap      # Debian, Ubuntu
-sudo dnf install bubblewrap      # Fedora
 sudo pacman -S bubblewrap        # Arch
+sudo dnf install bubblewrap      # Fedora
+sudo apt install bubblewrap      # Debian 13+, Ubuntu 24.10+
+bwrap --version                  # needs 0.10+
 ```
+
+<details>
+<summary>Ubuntu 24.04 and Debian 12 ship an older bubblewrap (0.9 and 0.8). Build a current one:</summary>
+
+```sh
+sudo apt install git meson ninja-build pkg-config libcap-dev
+git clone --depth 1 --branch v0.11.2 https://github.com/containers/bubblewrap
+cd bubblewrap && meson setup _build -Dman=disabled -Dtests=false
+ninja -C _build && sudo ninja -C _build install      # → /usr/local/bin/bwrap
+```
+
+With an older bubblewrap, only `--workspace-mode bind` on your own tools
+works: no workspace copy, no images.
+</details>
 
 **2. Get plybox**, a single static binary:
 
@@ -468,8 +483,9 @@ Found a hole? Please report it privately; see [SECURITY.md](SECURITY.md).
 ## Requirements
 
 - Linux on x86_64, with unprivileged user namespaces (kernel 5.11+).
-- [bubblewrap](https://github.com/containers/bubblewrap). Version 0.9+ is
-  needed for `--tmpfs` and `--disk`.
+- [bubblewrap](https://github.com/containers/bubblewrap) 0.10 or newer: the
+  workspace copy and `--image` use its overlay mounts. See
+  [Install](#install) for Ubuntu 24.04 and Debian 12.
 - For memory, process and CPU limits: cgroup v2, plus a user systemd session
   on desktops.
 - For `--isolation gvisor`: gVisor's

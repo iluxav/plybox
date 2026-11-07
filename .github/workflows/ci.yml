@@ -46,10 +46,15 @@ jobs:
       - uses: actions/checkout@v5
       - name: Toolchain
         run: rustup target add "$TARGET"
-      - name: bubblewrap, musl-tools, user namespaces
+      # Ubuntu 24.04 ships bubblewrap 0.9.0, which has no overlay mounts.
+      # Build the oldest version plybox supports, so that claim stays tested.
+      - name: bubblewrap 0.10.0, musl-tools, user namespaces
         run: |
           sudo apt-get update -q
-          sudo apt-get install -yq bubblewrap musl-tools
+          sudo apt-get install -yq musl-tools meson ninja-build pkg-config libcap-dev
+          git clone -q --depth 1 --branch v0.10.0 https://github.com/containers/bubblewrap "$RUNNER_TEMP/bwrap"
+          meson setup "$RUNNER_TEMP/bwrap/_build" "$RUNNER_TEMP/bwrap" -Dman=disabled -Dtests=false
+          ninja -C "$RUNNER_TEMP/bwrap/_build" && sudo ninja -C "$RUNNER_TEMP/bwrap/_build" install
           # Ubuntu 23.10+ restricts unprivileged user namespaces via AppArmor.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           bwrap --version
