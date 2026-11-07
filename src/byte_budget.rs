@@ -1,5 +1,6 @@
 //! A run-wide byte budget, shared by every upstream connection. Reserve
 //! before I/O and refund unused bytes, so parallel transfers cannot overshoot.
+//! Reads reserve only once data is queued, so an idle connection holds none.
 use std::io::{self, Read, Write};
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
@@ -118,9 +119,37 @@ impl<S> Metered<S> {
         }
     }
 }
-impl<S: Read> Read for Metered<S> {
+/// How many bytes a read would return right now, waiting (as a read would,
+/// honouring its timeout) until there is at least one or the stream ends.
+/// Consumes nothing: data stays queued for the read that follows.
+pub trait Peek {
+    fn ready(&self, buf: &mut [u8]) -> io::Result<usize>;
+}
+impl Peek for std::net::TcpStream {
+    fn ready(&self, buf: &mut [u8]) -> io::Result<usize> {
+        self.peek(buf)
+    }
+}
+impl<T: AsRef<[u8]>> Peek for std::io::Cursor<T> {
+    fn ready(&self, buf: &mut [u8]) -> io::Result<usize> {
+        let left = (self.get_ref().as_ref().len() as u64).saturating_sub(self.position());
+        Ok(left.min(buf.len() as u64) as usize)
+    }
+}
+
+impl<S: Read + Peek> Read for Metered<S> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let mut r = self.download.reserve(buf.len())?;
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        // Wait for data first and reserve only what is queued: a connection
+        // blocked on a quiet upstream holds none of the shared budget, and
+        // the end of a stream is seen even when the budget is spent.
+        let queued = self.stream.ready(buf)?;
+        if queued == 0 {
+            return Ok(0);
+        }
+        let mut r = self.download.reserve(queued)?;
         let n = self.stream.read(&mut buf[..r.bytes])?;
         r.commit(n);
         Ok(n)
@@ -192,6 +221,32 @@ mod tests {
         s.write_all(b"abc").unwrap();
         assert_eq!(up.used(), 3);
         assert!(s.write(b"x").is_err());
+    }
+
+    #[test]
+    fn an_idle_connection_holds_no_download_budget() {
+        use std::net::{TcpListener, TcpStream};
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = l.local_addr().unwrap();
+        let down = budget(10);
+        // Connection A: the upstream never sends; a reader blocks on it.
+        let idle = TcpStream::connect(addr).unwrap();
+        let (_idle_peer, _) = l.accept().unwrap();
+        let mut a = Metered::new(idle.try_clone().unwrap(), budget(0), down.clone());
+        let blocked = std::thread::spawn(move || a.read(&mut [0; 16384]).map_err(|e| e.kind()));
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        // Connection B has data and must get the whole budget meanwhile.
+        let busy = TcpStream::connect(addr).unwrap();
+        let (mut busy_peer, _) = l.accept().unwrap();
+        busy_peer.write_all(&[7; 10]).unwrap();
+        let mut b = Metered::new(busy, budget(0), down.clone());
+        let mut got = [0; 16384];
+        assert_eq!(b.read(&mut got).unwrap(), 10, "the idle reader held budget");
+        // A wakes at EOF without needing budget, then everything is accounted.
+        idle.shutdown(std::net::Shutdown::Read).unwrap();
+        drop(_idle_peer);
+        assert_eq!(blocked.join().unwrap(), Ok(0));
+        assert_eq!(down.used(), 10);
     }
 
     #[test]

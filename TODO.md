@@ -90,10 +90,3 @@ through `plybox` unchanged and `--quiet` keeps plybox's own messages off
 stdout; `plybox` exits with the box's exit code; files the agent writes land
 in `<session>/upper/` until `apply` (or directly in the folder with
 `--workspace-mode bind`).
-
-## Known, documented
-
-- An idle proxy connection holds up to 16 KB of the `--bytes-in` budget
-  while blocked in read; very small budgets can refuse new connections
-  early. The cap itself is never exceeded. (Fix: wait for readability
-  before reserving.)
