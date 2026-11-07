@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  TARGET: x86_64-unknown-linux-musl
+
+jobs:
+  check:
+    name: Lint, unit tests, static build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          rustup component add clippy
+          rustup target add "$TARGET"
+      - name: Clippy
+        run: cargo clippy --release --all-targets -- -D warnings
+      - name: Unit tests
+        run: cargo test --release
+      - name: Static binary
+        run: |
+          cargo build --release --target "$TARGET"
+          ./target/$TARGET/release/plybox version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plybox-linux-x86_64
+          path: target/x86_64-unknown-linux-musl/release/plybox
+
+  integration:
+    name: Sandbox suites (policy, sessions)
+    runs-on: ubuntu-24.04
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: rustup target add "$TARGET"
+      - name: bubblewrap and user namespaces
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -yq bubblewrap
+          # Ubuntu 23.10+ restricts unprivileged user namespaces via AppArmor.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          bwrap --version
+      - name: Hostile policy and operator rules
+        run: make test-policy
+      - name: Session lifecycle, apply safety, resume
+        run: make test-sessions

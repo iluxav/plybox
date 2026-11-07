@@ -35,8 +35,11 @@ mod workspace;
 use std::process::exit;
 
 fn usage() -> ! {
-    eprintln!(
-        "usage: plybox run [--policy FILE] [--image IMAGE] [--isolation ns|gvisor] [--runsc PATH]\n\
+    eprintln!("{USAGE}");
+    exit(2)
+}
+
+const USAGE: &str = "usage: plybox run [--policy FILE] [--image IMAGE] [--isolation ns|gvisor] [--runsc PATH]\n\
          \x20                 [--rootfs host|DIR] [--work DIR] [--workspace-mode overlay|bind]\n\
          \x20                 [--allow HOST[:PORT]]... [--secret NAME[=VALUE]@HOST]... [--secret-file NAME=PATH@HOST]... [--ro-bind HOST:BOX]...\n\
          \x20                 [--env K=V | --env K]... [--mem SIZE] [--pids N] [--cpu CORES]\n\
@@ -49,10 +52,10 @@ fn usage() -> ! {
          \x20      plybox discard SESSION|--last   delete a session and its unapplied changes\n\
          \x20      plybox diff  SESSION|--last [--patch]   what the box changed; --patch shows the lines\n\
          \x20      plybox apply SESSION|--last     copy those changes onto the real workspace\n\
-         \x20      plybox version"
-    );
-    exit(2)
-}
+         \x20      plybox version\n\
+         \x20      plybox help\n\
+         \n\
+         docs: https://github.com/iluxav/plybox#readme";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -170,7 +173,8 @@ fn main() {
                 exit(1)
             }
         },
-        Some("version") => println!("plybox {}", env!("CARGO_PKG_VERSION")),
+        Some("version") | Some("--version") | Some("-V") => println!("plybox {}", env!("CARGO_PKG_VERSION")),
+        Some("help") | Some("--help") | Some("-h") => println!("{USAGE}"),
         _ => usage(),
     }
 }

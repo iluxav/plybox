@@ -2,8 +2,14 @@
 name = "plybox"
 version = "0.0.1"
 edition = "2021"
-description = "Run an AI agent in a box whose only way out is through plybox: files by declared mounts, network by hostname through its proxy, every decision recorded"
+description = "Run AI agents and untrusted code in a box: network by hostname allow list, API keys the box never sees, edits held for review, every decision recorded. No root, no daemon."
 license = "MIT"
+authors = ["Ilya Vinokurov"]
+repository = "https://github.com/iluxav/plybox"
+homepage = "https://github.com/iluxav/plybox"
+readme = "README.md"
+keywords = ["sandbox", "ai-agents", "security", "bubblewrap", "gvisor"]
+categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 libc = "0.2"

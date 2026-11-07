@@ -74,9 +74,11 @@ sessions = "$OPD/sessions"
 [secrets]
 OPKEY = { only = "api.example.org", file = "$OPD/opkey" }
 [max]
-mem = "1G"
-pids = 256
+file_size = "64M"
+bytes_in = "10M"
 EOF
+# The same rules plus cgroup limits, for the checks that need them.
+{ cat "$OPD/operator.toml"; printf 'mem = "1G"\npids = 256\n'; } > "$OPD/limits.toml"
 opr() { PLYBOX_OPERATOR="${OPF:-$OPD/operator.toml}" "$PLYBOX" run --quiet "$@"; }
 refused() { # name, expected-message-fragment, run args...
   local name="$1" want="$2"; shift 2
@@ -89,7 +91,7 @@ start_of() { grep '"event":"start"' "$1/record.jsonl"; }
 S="$OPD/sessions/ok"
 opr --work "$OKW" --session "$S" --allow api.example.com --secret-file "OPKEY=$OPD/outside/key@evil.com" -- true >/dev/null 2>&1; code=$?
 st="$(start_of "$S")"
-[ $code -eq 0 ] && echo "$st" | grep -q '"mem":"1G"' && echo "$st" | grep -q '"pids":256' && echo "$st" | grep -qF "\"operator\":\"$OPD/operator.toml\""
+[ $code -eq 0 ] && echo "$st" | grep -q '"file_size":67108864' && echo "$st" | grep -q '"bytes_in":10485760' && echo "$st" | grep -qF "\"operator\":\"$OPD/operator.toml\""
 check "allowed run gets the max limits, records the rules" $? "exit $code"
 echo "$st" | grep -qF '"secrets":["OPKEY@api.example.org"]' && echo "$st" | grep -qF "\"host\":\"$OPD/opkey\"" && ! echo "$st" | grep -qF "$OPD/outside/key"
 check "operator's secret: its own file and host, not the policy's" $? "$(echo "$st" | grep -o '"secrets":\[[^]]*\]')"
@@ -103,7 +105,8 @@ refused "wildcard does not cover its apex"           "outside the operator's hos
 refused "secret file the operator did not declare"   "only the operator's secrets" --work "$OKW" --secret-file "K=$OPD/outside/key@api.example.org"
 refused "secret from plybox's env, undeclared"       "only the operator's secrets" --work "$OKW" --secret "HOME@api.example.org"
 refused "typed secret to a host outside the list"    "outside the operator's hosts" --work "$OKW" --secret "MINE=v@evil.com"
-refused "memory over the maximum"                    "over the maximum" --work "$OKW" --mem 2G
+refused "a limit over the maximum"                   "over the maximum" --work "$OKW" --file-size 128M
+OPF="$OPD/limits.toml" refused "memory over the maximum" "over the maximum" --work "$OKW" --mem 2G
 refused "map refused"                                "net.map is not allowed" --work "$OKW" --map api.example.com=127.0.0.1:443
 refused "trust_ca refused"                           "net.trust_ca is not allowed" --work "$OKW" --trust-ca "$OPD/opkey"
 refused "--learn refused"                            "--learn is not allowed" --work "$OKW" --learn
@@ -124,14 +127,23 @@ OPF="$OPD/typo.toml" refused "unknown key in the operator file refused" "unknown
 # Limits the operator requires but this machine cannot enforce: no
 # systemd-run on PATH, and on a desktop no cgroup of our own either.
 mkdir -p "$T/bin"; ln -sf "$(command -v bwrap)" "$T/bin/bwrap"
-msg="$(PATH="$T/bin" opr --work "$OKW" -- /usr/bin/true 2>&1)"; code=$?
+msg="$(PATH="$T/bin" OPF="$OPD/limits.toml" opr --work "$OKW" -- /usr/bin/true 2>&1)"; code=$?
 if [ $code -eq 0 ]; then  # a container's init: the direct cgroup worked
   start_of "$(ls -td "$XDG_STATE_HOME"/plybox/sessions/*/ | head -1)" | grep -q '"via":"cgroup '
 else echo "$msg" | grep -q "cannot be enforced"; fi
 check "required limits unenforceable: refused" $? "$(echo "$msg" | head -1 | sed 's/^plybox: //' | cut -c1-90)"
 
+# Where this machine can enforce cgroup limits, [max] fills them in too.
+S="$OPD/sessions/lim"
+if OPF="$OPD/limits.toml" opr --work "$OKW" --session "$S" -- true >/dev/null 2>&1; then
+  start_of "$S" | grep -q '"mem":"1G"' && start_of "$S" | grep -q '"pids":256'
+  check "max mem/pids fill in when the policy is silent" $? "$(start_of "$S" | grep -o '"via":"[^"]*"')"
+else
+  printf 'check\t%-52s\tskip\t%s\n' "max mem/pids fill in when the policy is silent" "no cgroup limits on this machine"
+fi
+
 if [ -x "$RUNSC" ]; then
-  { cat "$OPD/operator.toml"; } | sed "1i isolation = \"gvisor\"\nrunsc = \"$RUNSC\"" > "$OPD/gvisor.toml"
+  sed "1i isolation = \"gvisor\"\nrunsc = \"$RUNSC\"" "$OPD/operator.toml" > "$OPD/gvisor.toml"
   S="$OPD/sessions/gv"
   msg="$(OPF="$OPD/gvisor.toml" opr --work "$OKW" --session "$S" --isolation ns -- true 2>&1)"; code=$?
   [ $code -eq 0 ] && start_of "$S" | grep -q '"isolation":"gvisor"'
