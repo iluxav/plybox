@@ -70,13 +70,22 @@ pub fn write_bundle(
 
     match pol.fs.rootfs.as_str() {
         "host" => {
-            for (link, target) in [("lib", "usr/lib"), ("lib64", "usr/lib"), ("bin", "usr/bin"), ("sbin", "usr/bin")] {
-                let p = rootfs.join(link);
-                if p.symlink_metadata().is_err() {
-                    std::os::unix::fs::symlink(target, &p).map_err(|e| format!("bundle {link}: {e}"))?;
+            ro_bind(&mut mounts, "/usr", "/usr");
+            // The host's own top-level links (see exposure::host_top_level).
+            for (name, kind) in crate::exposure::host_top_level(Path::new("/")) {
+                let p = rootfs.join(name);
+                match kind {
+                    crate::exposure::TopLevel::Link(target) => {
+                        if p.symlink_metadata().is_err() {
+                            std::os::unix::fs::symlink(&target, &p).map_err(|e| format!("bundle {name}: {e}"))?;
+                        }
+                    }
+                    crate::exposure::TopLevel::Dir => {
+                        let _ = std::fs::create_dir_all(&p);
+                        ro_bind(&mut mounts, &format!("/{name}"), &format!("/{name}"));
+                    }
                 }
             }
-            ro_bind(&mut mounts, "/usr", "/usr");
             for f in crate::exposure::HOST_ETC {
                 if Path::new(f).exists() {
                     if Path::new(f).is_file() {

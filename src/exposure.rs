@@ -12,9 +12,43 @@ use serde_json::{json, Value};
 use std::path::Path;
 
 /// Host files a `rootfs = "host"` box sees besides /usr, when they exist.
-/// Both tiers mount exactly this list.
-pub const HOST_ETC: [&str; 7] =
-    ["/etc/ssl", "/etc/ca-certificates", "/etc/passwd", "/etc/group", "/etc/hosts", "/etc/ld.so.cache", "/etc/localtime"];
+/// Both tiers mount exactly this list. `/etc/alternatives` is where Debian
+/// and Ubuntu point commands such as `awk` and `editor`.
+pub const HOST_ETC: [&str; 8] = [
+    "/etc/ssl", "/etc/ca-certificates", "/etc/passwd", "/etc/group", "/etc/hosts", "/etc/ld.so.cache", "/etc/localtime",
+    "/etc/alternatives",
+];
+
+/// The host root's top-level program and library directories.
+const HOST_TOP: [&str; 6] = ["bin", "sbin", "lib", "lib64", "lib32", "libx32"];
+
+#[derive(Debug, PartialEq)]
+pub enum TopLevel {
+    /// A merged-/usr link, recreated in the box with the same target.
+    Link(String),
+    /// A real directory (an older, unmerged layout), bound read-only.
+    Dir,
+}
+
+/// How a `rootfs = "host"` box reproduces the host's `/bin`, `/lib`,
+/// `/lib64`…: the same links, not one distribution's. Ubuntu links
+/// `/lib64` to `usr/lib64` (where the ELF loader lives), Arch to `usr/lib`;
+/// a wrong guess leaves every program without its loader ("No such file").
+pub fn host_top_level(root: &Path) -> Vec<(&'static str, TopLevel)> {
+    HOST_TOP
+        .iter()
+        .filter_map(|name| {
+            let p = root.join(name);
+            match std::fs::symlink_metadata(&p) {
+                Ok(m) if m.file_type().is_symlink() => {
+                    std::fs::read_link(&p).ok().map(|t| (*name, TopLevel::Link(t.to_string_lossy().into_owned())))
+                }
+                Ok(m) if m.is_dir() => Some((*name, TopLevel::Dir)),
+                _ => None,
+            }
+        })
+        .collect()
+}
 
 #[derive(Debug, PartialEq)]
 pub struct Item {
@@ -40,6 +74,11 @@ pub fn of(pol: &Policy, work: &Path, workspace: &str, image: bool) -> Vec<Item> 
     match pol.fs.rootfs.as_str() {
         "host" => {
             v.push(item("system", "/usr", "/usr"));
+            for (name, kind) in host_top_level(Path::new("/")) {
+                if kind == TopLevel::Dir {
+                    v.push(item("system", format!("/{name}"), format!("/{name}")));
+                }
+            }
             for f in HOST_ETC {
                 if Path::new(f).exists() {
                     v.push(item("system", f, f));
@@ -143,6 +182,18 @@ mod tests {
         for want in ["/srv/root", "/home/u/proj", "/home/u/.rustup", "/home/u/tok", "/home/u/ca.pem", "svc.test", "10.0.0.5:8443"] {
             assert!(all.contains(want), "missing {want}: {all}");
         }
+    }
+
+    #[test]
+    fn host_top_level_mirrors_links_and_binds_real_dirs() {
+        let root = std::env::temp_dir().join(format!("plybox-top-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("lib32")).unwrap();
+        std::os::unix::fs::symlink("usr/bin", root.join("bin")).unwrap();
+        std::os::unix::fs::symlink("usr/lib64", root.join("lib64")).unwrap(); // Ubuntu's
+        let got = host_top_level(&root);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(got, [("bin", TopLevel::Link("usr/bin".into())), ("lib64", TopLevel::Link("usr/lib64".into())), ("lib32", TopLevel::Dir)]);
     }
 
     #[test]

@@ -470,11 +470,14 @@ fn bwrap_argv(
 
     match pol.fs.rootfs.as_str() {
         "host" => {
-            push(&[
-                "--ro-bind", "/usr", "/usr",
-                "--symlink", "usr/lib", "/lib", "--symlink", "usr/lib", "/lib64",
-                "--symlink", "usr/bin", "/bin", "--symlink", "usr/bin", "/sbin",
-            ]);
+            push(&["--ro-bind", "/usr", "/usr"]);
+            for (name, kind) in crate::exposure::host_top_level(Path::new("/")) {
+                let dest = format!("/{name}");
+                match kind {
+                    crate::exposure::TopLevel::Link(target) => push(&["--symlink", &target, &dest]),
+                    crate::exposure::TopLevel::Dir => push(&["--ro-bind", &dest, &dest]),
+                }
+            }
             for f in crate::exposure::HOST_ETC {
                 push(&["--ro-bind-try", f, f]);
             }
