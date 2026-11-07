@@ -255,3 +255,11 @@ bubblewrap cannot create mount points in a read-only image (fixed with
 images (static glibc broke DNS on the host side; static musl works, with
 the host gcc for ring/zstd); gVisor creates missing mount points in the
 image directory itself (plybox now creates its fixed ones once, at pull).
+
+Sessions (2026-11-07, `sessions/run.sh`): `plybox sessions`, `discard`,
+`sessions --prune`; `apply` marks a session applied. 12 checks pass,
+including `apply` of a deletion (untested until now) and two apply-safety
+cases: a repo symlink pointing out of the workspace is replaced, not written
+through — the previous build (b85fb87) wrote through it and overwrote the
+outside file, measured — and a tampered upper layer that would write under a
+directory symlink pointing out is refused before anything is applied.

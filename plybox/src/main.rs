@@ -39,6 +39,8 @@ fn usage() -> ! {
          \x20                 [--learn [FILE]] [--session DIR] [--quiet] -- COMMAND [ARGS...]\n\
          \x20      plybox pull IMAGE               fetch an OCI image (e.g. python:3.13-slim) for --image\n\
          \x20      plybox images                   list pulled images\n\
+         \x20      plybox sessions [--prune]       list sessions and their status; --prune removes applied/empty ones\n\
+         \x20      plybox discard SESSION|--last   delete a session and its unapplied changes\n\
          \x20      plybox diff  SESSION|--last     what the box changed in its workspace copy\n\
          \x20      plybox apply SESSION|--last     copy those changes onto the real workspace\n\
          \x20      plybox version"
@@ -76,6 +78,40 @@ fn main() {
         Some("images") => {
             for m in image::list() {
                 println!("{:<40} {}", m.reference, &m.digest[..19.min(m.digest.len())]);
+            }
+        }
+        Some("sessions") => {
+            if args.get(1).map(String::as_str) == Some("--prune") {
+                let removed = workspace::prune();
+                for (id, why) in &removed {
+                    println!("removed {id}  ({why})");
+                }
+                println!("{} session(s) removed; pending and running sessions kept", removed.len());
+            } else {
+                let all = workspace::list();
+                if all.is_empty() {
+                    println!("(no sessions)");
+                }
+                for i in &all {
+                    let age = workspace::now().saturating_sub(i.meta.last_started.max(i.meta.started));
+                    let age = if age < 3600 { format!("{}m", age / 60) } else if age < 86400 { format!("{}h", age / 3600) } else { format!("{}d", age / 86400) };
+                    let cmd: String = i.meta.cmd.join(" ").chars().take(48).collect();
+                    println!("{:<22} {:>4} ago  {:<14} {}  — {}", i.id, age, i.status(), i.meta.workspace.display(), cmd);
+                }
+                let pending = all.iter().filter(|i| i.pending()).count();
+                if pending > 0 {
+                    println!("\n{pending} session(s) hold changes never applied: `plybox diff ID`, then `plybox apply ID` or `plybox discard ID`");
+                }
+            }
+        }
+        Some("discard") => {
+            let target = args.get(1).map(String::as_str).unwrap_or("--last");
+            match workspace::resolve(target).and_then(|dir| workspace::discard(&dir).map(|_| dir)) {
+                Ok(dir) => println!("discarded {}", dir.display()),
+                Err(e) => {
+                    eprintln!("plybox: {e}");
+                    exit(1)
+                }
             }
         }
         Some("diff") | Some("apply") => {

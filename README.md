@@ -37,7 +37,7 @@ Anthropic's sandbox-runtime and Greywall use; everything around it is
 plybox.
 
 ```sh
-cd plybox && cargo build --release --target x86_64-unknown-linux-musl   # static: runs in any image
+make install            # static build → ~/.local/bin/plybox (make uninstall removes it)
 
 # Tools from an image — nothing installed on the host:
 plybox run --image python:3.13-slim --allow pypi.org -- python3 script.py
@@ -49,6 +49,8 @@ ANTHROPIC_API_KEY=sk-… plybox run --secret ANTHROPIC_API_KEY@api.anthropic.com
   -- claude -p "fix the tests"
 plybox diff --last      # what it changed, held in the session
 plybox apply --last     # copy those changes onto your directory
+plybox sessions         # every session: PENDING n / applied / no changes
+plybox discard ID       # drop a session's changes; `plybox sessions --prune` clears applied + empty
 
 # Don't know what the agent needs to reach? Learn it once, then enforce it.
 plybox run --learn agent.toml -- claude -p "fix the tests"   # allows + records every destination
@@ -90,7 +92,15 @@ image starts in 3 ms (namespaces) / 18 ms (gVisor). Verified by hand:
 `node:22-slim` (npm install + node), `mwader/static-ffmpeg:7.1` (a
 `FROM scratch` image — no shell, no libc — rendering and probing a video).
 
-Known gaps: `apply` of a deletion is untested; `ioctl` is allowed for every
+`apply` treats the session as untrusted: it carries deletions, never writes
+through a symlink (a repo symlink pointing out of the workspace is replaced,
+not followed — the earlier build did follow it, measured), and refuses the
+whole apply if any change would land outside the workspace
+(`lab/sessions/run.sh`, 12 checks).
+
+Known gaps: no `--resume` (a new box cannot continue an ended session's
+copy); a running box does not hold the session lock yet, so `apply` during
+a run is not refused; `plybox diff` lists files, not lines; `ioctl` is allowed for every
 request code; x86_64 only; private registries (login) are not supported
 yet; under gVisor, an extra `--ro-bind` target missing from an image is
 created inside the cached image; exfiltration *through an allowed host* is
