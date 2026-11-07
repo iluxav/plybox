@@ -69,6 +69,19 @@ vice versa. About half a day for 1–2.
    the operator's rules (see the policy guard above) still decide.
 3. **Rust crate** later, only if someone wants to embed it; same rule —
    it spawns the binary rather than linking the supervisor in.
+4. **`plybox cat SESSION PATH`** — print one file from the session's copy of
+   the workspace (e.g. an agent's `result.json`) without knowing where
+   sessions live or applying anything. Reads the box's work, so treat it as
+   untrusted like `diff --patch` does: open with O_NOFOLLOW, refuse paths
+   with `..` or leading `/`, refuse non-regular files, cap the size, and fall
+   back to the workspace's own file when the box did not change it. SDK:
+   `r.read("result.json")`.
+
+How results reach the caller today (verified): the box's stdout/stderr pass
+through `plybox` unchanged and `--quiet` keeps plybox's own messages off
+stdout; `plybox` exits with the box's exit code; files the agent writes land
+in `<session>/upper/` until `apply` (or directly in the folder with
+`--workspace-mode bind`).
 
 ## Known, documented
 
