@@ -36,6 +36,13 @@ use crate::secrets::{Secret, Tls};
 const MAX_HEAD: usize = 64 * 1024;
 const MAX_BODY: usize = 64 * 1024 * 1024;
 const IO_TIMEOUT: Duration = Duration::from_secs(15);
+// Non-streaming model calls can be silent for ten minutes; allow five more
+// for transport/scheduling overhead. Keep a finite idle wait: each stalled
+// connection holds a supervisor thread, sockets and a buffered request that
+// can reach MAX_BODY before substitution, outside the workload's cgroup
+// limits. With no connection cap, workload exit is the other lifetime bound.
+// This limits a stalled read, not a response that keeps making progress.
+const UPSTREAM_RESPONSE_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 
 #[derive(Default, Clone)]
 pub struct Allow {
@@ -429,6 +436,10 @@ impl Proxy {
             Ok(c) => c,
             Err(e) => return fail(format!("tls server: {e}")),
         };
+        // Socket I/O stall limits, not total upload/response deadlines: a
+        // progressing transfer can take longer. No client read is pending
+        // while we wait for the model; keep bounds on clients that stop
+        // uploading or stop reading the response.
         let _ = conn.set_read_timeout(Some(Duration::from_secs(60)));
         let _ = conn.set_write_timeout(Some(Duration::from_secs(60)));
         let mut client = Stream::new(&mut sconn, &mut conn);
@@ -452,7 +463,8 @@ impl Proxy {
             Ok(c) => c,
             Err(e) => return fail(format!("tls client: {e}")),
         };
-        let _ = upstream.stream.set_read_timeout(Some(Duration::from_secs(120)));
+        let _ = upstream.stream.set_read_timeout(Some(UPSTREAM_RESPONSE_TIMEOUT));
+        // Likewise, bound a stalled upstream write, not total upload time.
         let _ = upstream.stream.set_write_timeout(Some(Duration::from_secs(60)));
         let mut up = Stream::new(&mut cconn, &mut upstream);
         if let Err(e) = up.write_all(&head).and_then(|_| up.write_all(&body)).and_then(|_| up.flush()) {
@@ -696,5 +708,20 @@ fn transfer(from: &mut impl Read, to: &mut impl Write) -> (u64, bool) {
                 Err(_) => return (total, true),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn model_response_wait_exceeds_ten_minutes() {
+        // Non-streaming calls can stay silent for ten minutes. Leave room
+        // for transport overhead; the short TLS integration is in tests/limits.
+        assert!(
+            UPSTREAM_RESPONSE_TIMEOUT > Duration::from_secs(10 * 60),
+            "proxy must outwait a ten-minute model call, got {UPSTREAM_RESPONSE_TIMEOUT:?}"
+        );
     }
 }

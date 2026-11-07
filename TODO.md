@@ -56,6 +56,9 @@ Frozen until the launch check: the namespace tier, the session commands
 get no new work. Remove them after launch if nobody asks for them.
 
 After launch, led by feedback:
+- keep-alive on the secret path: today every request that uses a secret opens
+  a new upstream TCP+TLS connection (one request per connection), which adds
+  roughly 1-2 network round trips per model call over the internet.
 - inbound ports for services;
 - one host uid per box, to separate tenants from each other;
 - the SDK (below);

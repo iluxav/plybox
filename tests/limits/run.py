@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 
 BIN = str(Path(sys.argv[1]).resolve())
 VOLUME = Path(sys.argv[3]) if len(sys.argv) > 2 and sys.argv[2] == '--disk-volume' else None
@@ -184,6 +185,8 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=4) as p: list(p.map(once,
     class HTTPS(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
             seen.append(self.headers.get('x-api-key'))
+            if self.path == '/delayed':
+                time.sleep(0.25)
             self.send_response(200); self.send_header('Content-Length','100000'); self.end_headers()
             try: self.wfile.write(b'r'*100000)
             except OSError: pass
@@ -217,6 +220,32 @@ finally: s.close()
     usage=[e for e in events if e['event']=='net_usage'][-1]
     assert usage['bytes_out']==100,usage
     assert len(seen)==1,seen  # handshake capped before HTTP reached the server
+    # Pair the production timeout assertion in proxy.rs with a real delayed
+    # response through CONNECT, both TLS legs, and placeholder substitution.
+    delayed_client='''
+import http.client,os,socket,ssl
+s=socket.create_connection(('127.0.0.1',3128),timeout=5)
+s.sendall(b'CONNECT fixture.test:443 HTTP/1.1\\r\\n\\r\\n')
+h=b''
+while not h.endswith(b'\\r\\n\\r\\n'):
+    c=s.recv(1)
+    assert c, 'proxy closed before CONNECT completed'
+    h+=c
+assert h.startswith(b'HTTP/1.1 200'), h
+s=ssl.create_default_context().wrap_socket(s,server_hostname='fixture.test')
+with s:
+    s.sendall(('GET /delayed HTTP/1.1\\r\\nHost: fixture.test\\r\\nx-api-key: '+os.environ['TOKEN']+'\\r\\n\\r\\n').encode())
+    response=http.client.HTTPResponse(s)
+    response.begin()
+    assert response.status==200, response.status
+    assert response.read()==b'r'*100000, 'truncated delayed response'
+'''
+    _,events=run(delayed_client,*tlsnet)
+    assert seen==['fake-test-value','fake-test-value'],seen
+    net_events=[e for e in events if e['event']=='net' and e.get('mode')=='terminated']
+    assert len(net_events)==1 and net_events[0]['verdict']=='allowed',net_events
+    assert net_events[0]['secrets_substituted']==1,net_events
+    print('PASS delayed model response with secret substitution arrives complete', flush=True)
     https.shutdown(); https.server_close()
     print('PASS TLS handshake and secret-substituted traffic obey budgets', flush=True)
 
