@@ -154,7 +154,8 @@ tests/          the suites behind every claim above
   sessions/       session lifecycle (run.sh) and resume (resume.py)
   helpers/        test CA, a TLS stand-in for an API, in-box workloads
   tools/          fetch.sh for gVisor's runsc (downloads are gitignored)
-examples/       policy files (claude.toml: Claude Code on a Rust project)
+examples/       claude.toml (Claude Code on a Rust project);
+                agent/ (a hosted Python agent: image, policy, Dockerfile)
 docs/           research.md: the measurements that shaped the design
 ```
 

@@ -1,0 +1,31 @@
+# plybox policy for the hosted agent.
+#
+#   ANTHROPIC_API_KEY=sk-…  plybox run --policy examples/agent/agent.toml \
+#     -- python /opt/agent/agent.py "your task here"
+#
+# The agent's deps live in the image, so no network is needed except the one
+# host the agent talks to. The key is read from the environment here and
+# injected by the proxy on the request to Anthropic; the box only ever holds
+# a placeholder.
+
+[fs]
+# Replace with your pushed image, e.g. "ghcr.io/you/my-agent:1".
+# To try it without building an image, see README.md ("Run it today").
+image = "ghcr.io/you/my-agent:1"
+workspace = "."
+workspace_mode = "overlay"
+
+[net]
+allow = ["api.anthropic.com"]
+
+[secrets]
+ANTHROPIC_API_KEY = { only = "api.anthropic.com" }
+
+[limits]
+mem = "1G"
+pids = 256
+
+[env]
+# Non-essential network calls off, so the one allowed host is the only one
+# the SDK reaches.
+ANTHROPIC_LOG = "warn"
