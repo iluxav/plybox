@@ -1,12 +1,8 @@
 //! The supervisor side of `plybox run`.
 //!
-//! Namespaces and mounts are delegated to bubblewrap, exactly as the lab's
-//! box did (`lab/net/box.sh`): bwrap is mature, audited, setuid-free, and
-//! the same engine srt and Greywall use. What plybox adds around it is the
-//! part none of them have together — the hostname-deciding proxy outside the
-//! box, the in-box forwarder, the seccomp allowlist, Landlock, and the
-//! record. (Later slices: secrets at the proxy, the copy-on-write workspace,
-//! cgroup limits, the gVisor tier.)
+//! Runs gVisor by default, or bubblewrap for explicit namespace isolation.
+//! The supervisor holds secrets, enforces the network policy and records
+//! the run; namespace overlays also hold workspace edits for review.
 //!
 //! The box runs `plybox __inner`, which bridges 127.0.0.1:3128 to the proxy
 //! socket and execs the workload under the kernel-surface layer.
@@ -40,14 +36,12 @@ pub fn run(pol: Policy, cmd: Vec<String>, opts: RunOpts) -> Result<i32, String> 
         }
         None => None,
     };
+    pol.resolve_workspace_mode()?;
     let caps = crate::storage::Caps::parse(&pol)?;
-    if !["ns", "gvisor"].contains(&pol.isolation.as_str()) || !["overlay", "bind"].contains(&pol.fs.workspace_mode.as_str()) {
-        return Err("expected isolation ns|gvisor and workspace_mode overlay|bind".into());
-    }
     let work = pol.fs.workspace.clone();
     let (session, _guard, mut meta, resuming) = if let Some(resumed) = resume {
         if pol.isolation != "ns" || pol.fs.workspace_mode != "overlay" {
-            return Err("resume must keep namespace isolation and the overlay workspace".into());
+            return Err("resume must keep namespace isolation and the overlay workspace; add --isolation ns when supplying a new policy".into());
         }
         let original = std::fs::canonicalize(&resumed.meta.workspace).map_err(|e| format!("original workspace: {e}"))?;
         if work != original {
@@ -133,7 +127,7 @@ fn run_box(
         require_bwrap(
             &engine,
             (0, 11),
-            "the workspace copy (the default --workspace-mode overlay), --image and --rootfs need bubblewrap 0.11 or newer \
+            "the workspace copy (the namespace default --workspace-mode overlay), --image and --rootfs need bubblewrap 0.11 or newer \
              (for its overlay mounts); install a newer one (https://github.com/iluxav/plybox#requirements) or use \
              --workspace-mode bind with the host's tools",
         )?;
@@ -155,11 +149,11 @@ fn run_box(
     }
     let work = pol.workspace_abs()?;
     let overlay = pol.fs.workspace_mode == "overlay";
-    if overlay && !gvisor_tier {
+    if overlay {
         std::fs::create_dir_all(session.join("upper")).map_err(|e| format!("upper: {e}"))?;
         std::fs::create_dir_all(session.join("work")).map_err(|e| format!("overlay work: {e}"))?;
     }
-    if overlay && gvisor_tier && !quiet {
+    if pol.fs.workspace_mode == "readonly" && !quiet {
         eprintln!("plybox: gVisor tier: the workspace is read-only; writes go to $HOME and /tmp and vanish at exit");
     }
     meta.image = image.as_ref().map(|i| json!({ "ref": i.meta.reference, "digest": i.meta.digest }));
@@ -226,14 +220,18 @@ fn run_box(
     }
 
     // Everything the box reaches on the host, shown and recorded up front.
-    let ws_access = if !overlay { "read-write" } else if gvisor_tier { "read-only" } else { "copy; changes held in the session" };
+    let ws_access = match pol.fs.workspace_mode.as_str() {
+        "bind" => "read-write",
+        "readonly" => "read-only",
+        _ => "copy; changes held in the session",
+    };
     let exposure = crate::exposure::of(&pol, &work, ws_access, image.is_some());
     record.event(
         "start",
         json!({
             "cmd": cmd, "isolation": pol.isolation, "rootfs": pol.fs.rootfs, "workspace": work,
             "image": image.as_ref().map(|i| json!({ "ref": i.meta.reference, "digest": i.meta.digest })),
-            "workspace_mode": if gvisor_tier && overlay { "read-only (gvisor tier)" } else { pol.fs.workspace_mode.as_str() },
+            "workspace_mode": pol.fs.workspace_mode,
             "allow": pol.net.allow,
             "secrets": secret_list.iter().map(|s| format!("{}@{}", s.name, s.host)).collect::<Vec<_>>(),
             "limits": { "mem": pol.limits.mem, "pids": pol.limits.pids, "cpu": pol.limits.cpu, "via": enforcer.describe(),
@@ -287,7 +285,7 @@ fn run_box(
     inner_argv.push("--".into());
     inner_argv.extend(cmd.iter().cloned());
     let status = if gvisor_tier {
-        let bundle = gvisor::write_bundle(&pol, &work, session, &me, &inner_argv, &env, !overlay)?;
+        let bundle = gvisor::write_bundle(&pol, &work, session, &me, &inner_argv, &env, pol.fs.workspace_mode == "bind")?;
         let mut c = gvisor::command(&engine, session, &bundle, &session_id);
         enforcer.wrap(&mut c).status().map_err(|e| format!("gVisor (requires unshare and runsc): {e}"))?
     } else {

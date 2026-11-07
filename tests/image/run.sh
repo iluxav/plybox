@@ -59,7 +59,7 @@ BOXCMD='python3 /work/inside.py; /work/probe | sed "s/^/probe\t/"'
 
 echo "running image.ns ($IMAGE)" >&2
 prepare image.ns
-"$PLYBOX" run "${COMMON[@]}" --session "$RUN/s-ns" --work "$WORK" -- sh -c "$BOXCMD" \
+"$PLYBOX" run "${COMMON[@]}" --isolation ns --session "$RUN/s-ns" --work "$WORK" -- sh -c "$BOXCMD" \
   >"$OUT/image.ns.tsv" 2>"$OUT/image.ns.err" || echo "  image.ns exited nonzero — see $OUT/image.ns.err" >&2
 hostcheck image.ns
 
@@ -83,7 +83,7 @@ t() { local s; s=$(date +%s%N); if "$@" >/dev/null 2>&1; then echo $(( ($(date +
 LATW="$RUN/latwork"; mkdir -p "$LATW"
 {
   echo "tier	median_ms"
-  echo "plybox run --image (ns)	$(cd "$RUN" && for i in $(seq 10); do t "$PLYBOX" run --quiet --image "$IMAGE" --session "$RUN/lat-$i" --work "$LATW" -- /bin/true; done | med)"
+  echo "plybox run --image (ns)	$(cd "$RUN" && for i in $(seq 10); do t "$PLYBOX" run --quiet --isolation ns --image "$IMAGE" --session "$RUN/lat-$i" --work "$LATW" -- /bin/true; done | med)"
   [ -x "$RUNSC" ] && echo "plybox run --image --isolation gvisor	$(cd "$RUN" && for i in $(seq 10); do t "$PLYBOX" run --quiet --image "$IMAGE" --isolation gvisor --runsc "$RUNSC" --session "$RUN/glat-$i" --work "$LATW" -- /bin/true; done | med)"
 } > "$OUT/latency.tsv"
 echo "$IMAGE" > "$OUT/image.txt"

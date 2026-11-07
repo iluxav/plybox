@@ -57,10 +57,10 @@ python3 "$LAB/helpers/echo.py" --port $ECHO_B --cert "$RUN/ca/$OTHER_HOST.pem" -
 sleep 0.3
 
 NODE_DIR="$HOME/.local/share/mise/installs/node"
-echo "running plybox ($("$PLYBOX" version))" >&2
+echo "running plybox --isolation ns ($("$PLYBOX" version))" >&2
 prepare plybox
 SESSION="$RUN/session"
-"$PLYBOX" run --quiet --session "$SESSION" --work "$WORK" \
+"$PLYBOX" run --quiet --isolation ns --session "$SESSION" --work "$WORK" \
   --mem 512M --pids 512 \
   --allow api.anthropic.com --allow '*.anthropic.com' --allow registry.npmjs.org \
   --allow "$SECRET_HOST" --allow "$OTHER_HOST" \
@@ -130,7 +130,7 @@ LATW="$RUN/latwork"; mkdir -p "$LATW"
 {
   echo "tier	median_ms"
   echo "host	$(for i in $(seq 10); do t /bin/true; done | med)"
-  echo "plybox run	$(cd "$RUN" && for i in $(seq 10); do t "$PLYBOX" run --quiet --session "$RUN/lat-$i" --work "$LATW" -- /bin/true; done | med)"
+  echo "plybox run --isolation ns	$(cd "$RUN" && for i in $(seq 10); do t "$PLYBOX" run --quiet --isolation ns --session "$RUN/lat-$i" --work "$LATW" -- /bin/true; done | med)"
   if [ -x "$RUNSC" ]; then
     echo "plybox run --isolation gvisor	$(cd "$RUN" && for i in $(seq 10); do t "$PLYBOX" run --quiet --isolation gvisor --runsc "$RUNSC" --session "$RUN/glat-$i" --work "$LATW" -- /bin/true; done | med)"
   fi

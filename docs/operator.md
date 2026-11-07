@@ -27,6 +27,11 @@ runs as.
   silent on a limit gets the maximum. When `mem`, `pids` or `cpu` come from
   here and this machine cannot enforce them (no cgroup of plybox's own, no
   `systemd --user`), the run is refused rather than run unlimited.
+- **Forced isolation still wins.** New runs default to gVisor, but an
+  operator's `isolation` overrides policy and CLI choices before workspace
+  defaults and storage caps are checked. Set `isolation = "gvisor"` to
+  prevent a tenant selecting `ns`. With gVisor, explicit overlay staging,
+  `tmpfs` and `disk` caps are refused; they never trigger a tier switch.
 
 ## Example
 
@@ -60,7 +65,7 @@ bytes_in = "2G"
 
 | Rule | Effect |
 |---|---|
-| `isolation`, `runsc` | The tier is forced. A policy may not choose its own `runsc`. |
+| `isolation`, `runsc` | When set, the tier is forced. Otherwise policy/CLI selection applies (default: gVisor). A policy may not choose its own `runsc`. |
 | `images` | `--image` must match: an exact reference (`python:3.13-slim` and `docker.io/library/python:3.13-slim` are the same image), or a prefix ending in `*`. Tags can move, so pin `@sha256:` digests for a fixed image. |
 | `host_rootfs` | Without it, a box must use an approved image. |
 | `paths` | The workspace, each `ro_bind` source and a rootfs directory are resolved (symlinks and all) and must lie under one of these. The resolved path is what gets mounted, so a symlink swapped later changes nothing. |
@@ -84,5 +89,5 @@ secret source and destination).
   plain text in the session: never put secrets there.
 - **`plybox pull` / `images`.** These are operator commands, not runs.
 
-`make test-policy` measures these rules: 26 operator checks, plus 6 on what
-any policy can do to the box.
+`make test-policy` measures these rules, including forced-tier precedence,
+the default gVisor path, and what any policy can do to the box.

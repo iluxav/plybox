@@ -8,6 +8,17 @@ All notable changes to plybox are listed here. The format follows
 
 The first public release.
 
+### Changed
+
+- New runs and policies default to gVisor. Missing `runsc` fails with install
+  instructions; namespace isolation requires explicit `--isolation ns` or
+  `isolation = "ns"` (operator overrides still take precedence).
+- The default gVisor workspace is recorded as `readonly`, with no saved
+  copy for `diff`, `apply` or resume. Explicit overlay staging and disk/tmpfs
+  caps require the namespace tier; `bind` still writes directly.
+- Old saved policies and metadata without isolation retain namespace
+  semantics, so existing overlay sessions remain resumable.
+
 ### Added
 
 - `plybox run`: a box with its own namespaces, loopback-only network, a

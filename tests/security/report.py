@@ -63,7 +63,7 @@ def main():
         return f"{o} ({na} n/a)" if na else str(o)
 
     print("# plybox security suite: 41 attacker probes + workloads\n")
-    print("`host` = no sandbox (the control). `plybox` = namespaces tier, `plybox --isolation gvisor` = gVisor tier. "
+    print("`host` = no sandbox (the control). `plybox` = explicit `--isolation ns` tier, `plybox --isolation gvisor` = gVisor tier. "
           "Cells show open doors; `(n n/a)` = unmeasured, NOT closed.\n")
     print("## Open doors per class\n")
     print("| class | probes | " + " | ".join(cols) + " |")

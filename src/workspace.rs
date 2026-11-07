@@ -41,7 +41,7 @@ impl Change {
 pub struct Meta {
     pub workspace: PathBuf,
     pub workspace_mode: String,
-    #[serde(default)]
+    #[serde(default = "legacy_isolation")]
     pub isolation: String,
     #[serde(default)]
     pub cmd: Vec<String>,
@@ -70,8 +70,34 @@ pub struct Meta {
     #[serde(default)]
     pub image: Option<serde_json::Value>,
     /// Effective run policy; secret values are removed before persistence.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "saved_policy", skip_serializing_if = "Option::is_none")]
     pub policy: Option<crate::policy::Policy>,
+}
+
+fn legacy_isolation() -> String {
+    "ns".into()
+}
+
+/// Saved policies predate the gVisor default. Apply their historical defaults
+/// only here, leaving new TOML policies and CLI runs on the current defaults.
+fn saved_policy<'de, D: serde::Deserializer<'de>>(de: D) -> Result<Option<crate::policy::Policy>, D::Error> {
+    let value = Option::<serde_json::Value>::deserialize(de)?;
+    value.map(|mut value| {
+        if let Some(obj) = value.as_object_mut() {
+            obj.entry("isolation").or_insert_with(|| "ns".into());
+            let fs = obj.entry("fs").or_insert_with(|| serde_json::json!({}));
+            if let Some(fs) = fs.as_object_mut() {
+                fs.entry("workspace_mode").or_insert_with(|| "overlay".into());
+            }
+        }
+        serde_json::from_value(value).map_err(serde::de::Error::custom)
+    }).transpose()
+}
+
+impl Meta {
+    fn has_overlay(&self) -> bool {
+        self.workspace_mode == "overlay" && (self.isolation.is_empty() || self.isolation == "ns")
+    }
 }
 
 pub fn now() -> u64 {
@@ -246,8 +272,8 @@ impl Resume {
         if meta.applied.is_some() {
             return Err("this session was already applied; start a new run on the updated workspace".into());
         }
-        if meta.workspace_mode != "overlay" || (!meta.isolation.is_empty() && meta.isolation != "ns") {
-            return Err("resume requires a namespace session with an overlay workspace; bind and gVisor sessions have no saved workspace copy".into());
+        if !meta.has_overlay() {
+            return Err("resume requires a namespace session with an overlay workspace; bind and gVisor sessions have no saved workspace copy; start a new run with --isolation ns for staging".into());
         }
         // Legacy metadata did not record isolation. Existing upper/work
         // directories distinguish real namespace overlays from gVisor runs.
@@ -296,8 +322,10 @@ impl Info {
     pub fn status(&self) -> String {
         if self.running {
             "running".into()
-        } else if self.meta.workspace_mode != "overlay" {
-            "no copy (bind)".into()
+        } else if self.meta.isolation == "gvisor" {
+            "no copy (gvisor)".into()
+        } else if !self.meta.has_overlay() {
+            format!("no copy ({})", self.meta.workspace_mode)
         } else if self.meta.applied.is_some() {
             "applied".into()
         } else if self.changes == 0 {
@@ -308,7 +336,7 @@ impl Info {
     }
 
     pub fn pending(&self) -> bool {
-        !self.running && self.meta.workspace_mode == "overlay" && self.meta.applied.is_none() && self.changes > 0
+        !self.running && self.meta.has_overlay() && self.meta.applied.is_none() && self.changes > 0
     }
 }
 
@@ -317,7 +345,7 @@ pub fn list() -> Vec<Info> {
         .into_iter()
         .filter_map(|dir| {
             let meta = read_meta(&dir).ok()?;
-            let changes = if meta.workspace_mode == "overlay" && dir.join("upper").is_dir() {
+            let changes = if meta.has_overlay() && dir.join("upper").is_dir() {
                 Session { dir: dir.clone(), workspace: meta.workspace.clone() }.changes().map(|c| c.len()).unwrap_or(0)
             } else {
                 0
@@ -368,7 +396,7 @@ pub fn prune() -> Vec<(String, String)> {
         // A resume may have finished since list(): recheck under the lock
         // before deleting what could now be a pending workspace.
         let Ok(meta) = read_meta(&i.dir) else { continue };
-        if meta.applied.is_none() && meta.workspace_mode == "overlay" && i.dir.join("upper").is_dir() {
+        if meta.applied.is_none() && meta.has_overlay() && i.dir.join("upper").is_dir() {
             let session = Session { dir: i.dir.clone(), workspace: meta.workspace };
             match session.changes() {
                 Ok(changes) if changes.is_empty() => {}
@@ -452,8 +480,8 @@ impl Session {
     pub fn open(arg: &str) -> Result<Session, String> {
         let dir = resolve(arg)?;
         let meta = read_meta(&dir)?;
-        if meta.workspace_mode != "overlay" {
-            return Err("this session used a bind workspace: changes went straight to the directory".into());
+        if !meta.has_overlay() || (meta.applied.is_none() && !dir.join("upper").is_dir()) {
+            return Err("diff/apply require a namespace session with an overlay workspace; this session has no saved workspace copy; start a new run with --isolation ns for staging (bind writes go straight to the directory)".into());
         }
         Ok(Session { dir, workspace: meta.workspace })
     }

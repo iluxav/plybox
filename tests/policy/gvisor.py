@@ -40,9 +40,11 @@ with tempfile.TemporaryDirectory(prefix="pgtest.") as tmp:
     def run(code, mode="bind", *options):
         global number
         number += 1
-        command = [binary, "run", "--quiet", "--isolation", "gvisor", "--runsc", runsc,
+        command = [binary, "run", "--quiet", "--runsc", runsc,
                    "--session", str(root / f"session-{number}"), "--work", str(work),
-                   "--workspace-mode", mode, "--ro-bind", f"{readonly}:/opt/readonly"]
+                   "--ro-bind", f"{readonly}:/opt/readonly"]
+        if mode is not None:
+            command += ["--workspace-mode", mode]
         if args.image:
             command += ["--image", args.image]
         result = subprocess.run(command + list(options) + ["--", "python3", "-c", code],
@@ -113,10 +115,10 @@ for path in ['/work/new', '/work/private/existing', '/opt/readonly/file', '/opt/
         raise AssertionError('write succeeded: ' + path)
 for directory in ['/tmp', os.environ['HOME']]:
     Path(directory, 'scratch').write_text('ok')
-''', "overlay")
+''', None)
     assert original.read_text() == "after" and not (work / "new").exists()
     assert (readonly / "file").read_text() == "readable" and not (readonly / "new").exists()
-    print("PASS gVisor overlay workspace and ro_bind stay read-only; scratch stays writable", flush=True)
+    print("PASS default gVisor workspace and ro_bind stay read-only; scratch stays writable", flush=True)
 
     run(r'''
 import socket, stat

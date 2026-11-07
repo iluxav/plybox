@@ -20,7 +20,7 @@ check() { # name, condition-exit-code, detail
   else printf 'check\t%-52s\tFAIL\t%s\n' "$1" "$3"; FAILS=$((FAILS+1)); fi
 }
 tiers=(ns); [ -x "$RUNSC" ] && tiers+=(gvisor)
-tier_args() { [ "$1" = gvisor ] && echo "--isolation gvisor --runsc $RUNSC"; }
+tier_args() { if [ "$1" = gvisor ]; then echo "--isolation gvisor --runsc $RUNSC"; else echo "--isolation ns"; fi; }
 
 # A stand-in for plybox's in-box helper that skips everything it installs
 # (seccomp, Landlock, the forwarder) and runs the command bare.
@@ -79,7 +79,7 @@ bytes_in = "10M"
 EOF
 # The same rules plus cgroup limits, for the checks that need them.
 { cat "$OPD/operator.toml"; printf 'mem = "1G"\npids = 256\n'; } > "$OPD/limits.toml"
-opr() { PLYBOX_OPERATOR="${OPF:-$OPD/operator.toml}" "$PLYBOX" run --quiet "$@"; }
+opr() { PLYBOX_OPERATOR="${OPF:-$OPD/operator.toml}" "$PLYBOX" run --isolation ns --quiet "$@"; }
 refused() { # name, expected-message-fragment, run args...
   local name="$1" want="$2"; shift 2
   msg="$(opr "$@" -- true 2>&1)"; code=$?
@@ -143,6 +143,9 @@ else
 fi
 
 if [ -x "$RUNSC" ]; then
+  python3 "$ROOT/tests/policy/defaults.py" "$PLYBOX" "$RUNSC"
+  check "default tier, legacy modes and explicit opt-ins" $? "local regression suite"
+
   sed "1i isolation = \"gvisor\"\nrunsc = \"$RUNSC\"" "$OPD/operator.toml" > "$OPD/gvisor.toml"
   S="$OPD/sessions/gv"
   msg="$(OPF="$OPD/gvisor.toml" opr --work "$OKW" --session "$S" --isolation ns -- true 2>&1)"; code=$?

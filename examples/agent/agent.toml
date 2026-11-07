@@ -8,10 +8,13 @@
 # injected by the proxy on the request to Anthropic; the box only ever holds
 # a placeholder.
 
-[fs]
+isolation = "ns"  # explicit opt-in for staged output and diff/apply
+
 # Replace with your pushed image, e.g. "ghcr.io/you/my-agent:1".
 # To try it without building an image, see README.md ("Run it today").
 image = "ghcr.io/you/my-agent:1"
+
+[fs]
 workspace = "."
 workspace_mode = "overlay"
 

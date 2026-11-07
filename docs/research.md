@@ -3,6 +3,8 @@
 > (`run.sh`, `net/`, `kern/`, `full/`, `gv/`, `vm/`, `compare/`, `boxer/`)
 > were removed once the binary replaced them; they remain in git history.
 > The suites still in use live in `tests/` — see the README.
+> The measurements below predate the default-tier change: new runs now use
+> gVisor; namespace overlays require explicit `--isolation ns`.
 
 # plybox lab
 

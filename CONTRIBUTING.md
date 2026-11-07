@@ -22,17 +22,19 @@ itself inside the image, so it must not depend on the image's libc.
 | Command | What it measures | Time |
 |---|---|---|
 | `make test` | unit tests, including the real seccomp filter | seconds |
-| `make test-policy` | hostile policies, operator rules; gVisor ownership, writes and limits when runsc is installed | seconds |
-| `make test-sessions` | session lifecycle, `apply` safety, resume (35 checks) | ~20 s |
+| `make test-policy` | default tier, hostile policies, operator rules; gVisor ownership, writes and limits when runsc is installed | seconds |
+| `make test-sessions` | namespace session lifecycle, `apply` safety, resume (38 checks) | ~20 s |
 | `make test-limits` | storage, ioctl and traffic caps (local fixtures, no internet) | under a minute |
 | `make test-security` | 41 attacker probes + real workloads, both tiers (network) | ~2 min |
 | `make test-image` | the same inside an OCI image (network) | ~2 min |
 | `make test-all` | everything above | |
 
 `make tools` fetches and verifies gVisor's `runsc` into `tests/tools/` for
-the gVisor-tier checks. Suites that need it skip that tier without it.
+the default-tier checks. Suites that need it skip that tier without it.
 The gVisor checks also need util-linux's `unshare`. CI installs runsc so
-these checks run there too. To repeat the ownership checks with an image:
+these checks run there too, including a plain run with no isolation flag.
+Namespace-only tests explicitly pass `--isolation ns`. To repeat the
+ownership checks with an image:
 
 ```sh
 python3 tests/policy/gvisor.py target/x86_64-unknown-linux-musl/release/plybox tests/tools/runsc --image python:3.13-slim
@@ -50,7 +52,7 @@ src/
   main.rs         CLI entry: subcommands
   policy.rs       TOML policy + flags → one Policy
   operator.rs     operator rules (the owner's ceiling)
-  launch.rs       builds and runs the box (bubblewrap tier)
+  launch.rs       builds and runs the box (gVisor default, namespace opt-in)
   gvisor.rs       the same as an OCI bundle for runsc
   inner.rs        plybox __inner: in-box forwarder, Landlock, seccomp, exec
   seccomp.rs      the syscall allowlist
@@ -79,9 +81,9 @@ examples/         ready-made policies
 
 ## Design notes
 
-- **bubblewrap is the engine** for namespaces and mounts; plybox adds the
-  proxy, forwarder, seccomp, Landlock, sessions and record around it. A
-  from-scratch launcher is out of scope.
+- **gVisor is the default engine.** `--isolation ns` opts into bubblewrap
+  for namespaces and staged workspace edits. Both tiers use the proxy,
+  forwarder, seccomp and record; the namespace tier is frozen but tested.
 - **The supervisor stays outside the box.** Secrets, the proxy and the record
   never run where the workload can reach them.
 - **Fail closed.** A rule that can't be enforced refuses the run; a tool

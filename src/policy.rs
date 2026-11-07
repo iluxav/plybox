@@ -3,7 +3,7 @@
 //! ```toml
 //! [fs]
 //! rootfs    = "host"              # the host's /usr, read-only — or a directory
-//! workspace = "."                 # mounted read-write at /work
+//! workspace = "."                 # mounted at /work, read-only by default
 //! ro_bind   = ["/home/me/.local/share/mise/installs/node:/opt/node"]
 //!
 //! [net]
@@ -40,8 +40,8 @@ pub struct Policy {
     /// Per-box limits: `mem = "512M"`, `pids = 512`, `cpu = 1.5` (cores).
     #[serde(default)]
     pub limits: LimitsSpec,
-    /// `"ns"` (default): namespaces via bubblewrap. `"gvisor"`: gVisor's
-    /// user-space kernel in between, for code you do not trust.
+    /// `"gvisor"` (default): gVisor's user-space kernel. `"ns"`: opt in to
+    /// namespaces via bubblewrap.
     #[serde(default = "default_isolation")]
     pub isolation: String,
     /// Path to gVisor's `runsc` (default: found on PATH).
@@ -54,7 +54,7 @@ pub struct Policy {
 }
 
 fn default_isolation() -> String {
-    "ns".into()
+    "gvisor".into()
 }
 
 // By hand, so `Policy::default()` agrees with the serde defaults (a derived
@@ -122,9 +122,9 @@ pub struct Fs {
     /// Mounted at /work; the box starts there.
     #[serde(default = "default_workspace")]
     pub workspace: PathBuf,
-    /// `"overlay"` (default): the box writes to a copy; changes reach the
-    /// real directory only with `plybox apply`. `"bind"`: writes go straight
-    /// to the directory.
+    /// `"auto"` (default): readonly for gVisor, overlay for namespaces.
+    /// `"overlay"`: a namespace-only copy held for `plybox apply`.
+    /// `"bind"`: writes go straight to the directory.
     #[serde(default = "default_workspace_mode")]
     pub workspace_mode: String,
     /// Extra read-only binds, `HOSTPATH:BOXPATH`.
@@ -139,7 +139,7 @@ impl Default for Fs {
 }
 
 fn default_workspace_mode() -> String {
-    "overlay".into()
+    "auto".into()
 }
 
 fn default_rootfs() -> String {
@@ -178,6 +178,22 @@ pub struct RunOpts {
 }
 
 impl Policy {
+    /// Resolve defaults after operator rules have chosen the effective tier.
+    pub fn resolve_workspace_mode(&mut self) -> Result<(), String> {
+        if !["ns", "gvisor"].contains(&self.isolation.as_str()) {
+            return Err("expected isolation ns|gvisor".into());
+        }
+        if self.fs.workspace_mode == "auto" {
+            self.fs.workspace_mode = if self.isolation == "ns" { "overlay" } else { "readonly" }.into();
+        }
+        match (self.isolation.as_str(), self.fs.workspace_mode.as_str()) {
+            ("gvisor", "overlay") => Err("overlay staging requires namespace isolation; add --isolation ns (or use --workspace-mode bind for direct writes)".into()),
+            ("ns", "readonly") => Err("readonly workspace mode requires gVisor; omit --workspace-mode for a namespace overlay".into()),
+            (_, "overlay" | "bind" | "readonly") => Ok(()),
+            _ => Err("expected workspace_mode auto|readonly|overlay|bind".into()),
+        }
+    }
+
     /// Resolve host paths now, so a resumed run works from another cwd.
     pub fn absolute_paths(&mut self) -> Result<(), String> {
         fn absolute(path: &str) -> Result<String, String> {
@@ -427,8 +443,8 @@ pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, RunOpts), Stri
     p.net.map.extend(map);
     p.fs.ro_bind.extend(ro_bind);
     if let Some(m) = workspace_mode {
-        if m != "overlay" && m != "bind" {
-            return Err(format!("--workspace-mode `{m}`: expected overlay or bind"));
+        if !["auto", "readonly", "overlay", "bind"].contains(&m.as_str()) {
+            return Err(format!("--workspace-mode `{m}`: expected auto, readonly, overlay or bind"));
         }
         p.fs.workspace_mode = m;
     }
@@ -458,7 +474,7 @@ pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, RunOpts), Stri
     if caps.file_size.is_some() { p.limits.file_size = caps.file_size; }
     if caps.bytes_out.is_some() { p.limits.bytes_out = caps.bytes_out; }
     if caps.bytes_in.is_some() { p.limits.bytes_in = caps.bytes_in; }
-    crate::storage::Caps::parse(&p)?;
+    // Tier-dependent validation happens after the operator's overrides.
     p.env.extend(env);
     for spec in secrets {
         // Never echo the spec back: it may hold the value.
@@ -484,6 +500,21 @@ pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, RunOpts), Stri
 mod tests {
     use super::*;
     #[test]
+    fn new_runs_and_policies_default_to_gvisor_readonly() {
+        let (cli, _, _) = from_args(&["--".into(), "true".into()]).unwrap();
+        for mut p in [cli, toml::from_str::<Policy>("").unwrap(), Policy::default()] {
+            p.resolve_workspace_mode().unwrap();
+            assert_eq!(p.isolation, "gvisor");
+            assert_eq!(p.fs.workspace_mode, "readonly");
+        }
+        let (mut ns, _, _) = from_args(&["--isolation".into(), "ns".into(), "--".into(), "true".into()]).unwrap();
+        ns.resolve_workspace_mode().unwrap();
+        assert_eq!(ns.fs.workspace_mode, "overlay");
+        let mut overlay: Policy = toml::from_str("[fs]\nworkspace_mode = 'overlay'").unwrap();
+        assert!(overlay.resolve_workspace_mode().unwrap_err().contains("--isolation ns"));
+    }
+
+    #[test]
     fn ro_bind_cannot_cover_plyboxs_own_mounts() {
         for ok in ["/opt/claude", "/work/node_modules", "/usr/local/x", "/runner", "/run/user", "/plyboxes"] {
             assert!(check_box_dest(ok).is_ok(), "refused {ok}");
@@ -497,7 +528,7 @@ mod tests {
     #[test]
     fn limit_flags_override_toml_and_survive_saved_policy() {
         let path = std::env::temp_dir().join(format!("plybox-policy-caps-{}.toml", std::process::id()));
-        std::fs::write(&path, "[limits]\nfile_size='8K'\ntmpfs='3M'\nbytes_out='2M'\nbytes_in='1M'\n").unwrap();
+        std::fs::write(&path, "isolation='ns'\n[limits]\nfile_size='8K'\ntmpfs='3M'\nbytes_out='2M'\nbytes_in='1M'\n").unwrap();
         let args = vec!["--policy".into(), path.to_string_lossy().into_owned(), "--file-size".into(), "4K".into(),
             "--bytes-in".into(), "0".into(), "--".into(), "true".into()];
         let result = from_args(&args);

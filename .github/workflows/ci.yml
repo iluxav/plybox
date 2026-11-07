@@ -66,9 +66,9 @@ jobs:
             || { echo "::error title=bwrap::$out"; exit 1; }
       # Each suite prints one `check <TAB> name <TAB> pass|FAIL <TAB> detail`
       # line per check; failures become annotations on the run.
-      - name: gVisor for workspace and policy regressions
+      - name: gVisor for default-tier, workspace and policy regressions
         run: make tools
-      - name: Hostile policy and operator rules
+      - name: Default tier, hostile policy and operator rules
         run: |
           make test-policy 2>&1 | tee policy.log; code=${PIPESTATUS[0]}
           tests/helpers/annotate.sh policy policy.log "$code"

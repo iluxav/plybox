@@ -30,9 +30,9 @@ secrets and host allowlists alone are common now.
 
 ## Next: make the pitch true, then launch
 
-1. **Make gVisor the default tier.** `--isolation ns` stays available as an
-   opt-in until the launch check. Done when `plybox run -- …` with no flags
-   runs under runsc and every suite passes.
+1. **Make gVisor the default tier — done.** `plybox run -- …` uses runsc;
+   `--isolation ns` stays available as an opt-in until the launch check.
+   All suites pass; old saved namespace sessions retain their isolation.
 2. **Ship runsc inside the plybox binary.**
    - Unpack it on first use into plybox's state dir.
    - Verify it against a SHA-512 compiled into plybox, pinned to the release
@@ -152,6 +152,6 @@ vice versa. About half a day for 1–2.
 
 How results reach the caller today (verified): the box's stdout/stderr pass
 through `plybox` unchanged and `--quiet` keeps plybox's own messages off
-stdout; `plybox` exits with the box's exit code; files the agent writes land
-in `<session>/upper/` until `apply` (or directly in the folder with
-`--workspace-mode bind`).
+stdout; `plybox` exits with the box's exit code; the default gVisor workspace is read-only. With `--isolation ns`,
+workspace edits land in `<session>/upper/` until `apply`;
+`--workspace-mode bind` writes directly in either tier.

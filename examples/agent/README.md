@@ -4,6 +4,8 @@ A minimal Python agent (`agent.py`) that asks Claude to do a task and writes
 the answer to `ANSWER.md`. The point is not the agent — it is how plybox runs
 it: reaching only Anthropic, never holding the real API key, writing to a
 copy you review before accepting, under memory and process limits.
+This staging example explicitly selects `isolation = "ns"`; new runs without
+that setting use gVisor with a read-only workspace.
 
 ## The production path: build once, run fresh
 
@@ -48,8 +50,8 @@ try: urllib.request.urlopen(r,timeout=15); print("200")
 except urllib.error.HTTPError as e: print("reached Anthropic; HTTP",e.code)'
 ```
 
-`plybox diff --last` afterwards shows the box wrote nothing to your
-directory. The real agent (`agent.py`) uses the SDK and belongs in the
+This probe uses the default gVisor read-only workspace, so it cannot write
+to your directory. The real agent (`agent.py`) uses the SDK and belongs in the
 image; installing packages inside a running box is unreliable (the image's
 `site-packages` is root-owned and the box runs unprivileged), which is the
 reason deps are baked at build time.

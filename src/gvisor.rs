@@ -1,4 +1,4 @@
-//! The gVisor tier: `--isolation gvisor`.
+//! The default gVisor tier: `--isolation gvisor`.
 //!
 //! gVisor (runsc) puts a user-space kernel between the workload and the
 //! real one. The lab measured it closing six of the eight kernel doors by
@@ -15,7 +15,7 @@
 //! Workspace: gVisor's overlay is internal (memory or a backing file), not
 //! an upper directory plybox can read — and overlaying every mount would
 //! also copy the proxy socket up into memory and break it. So here
-//! `workspace_mode = "overlay"` means the workspace is mounted READ-ONLY:
+//! the default `workspace_mode = "readonly"` mounts the workspace READ-ONLY:
 //! untrusted code can read the repository and write only to $HOME and /tmp,
 //! which vanish at exit. `bind` writes straight to the directory, as usual.
 //!
@@ -205,9 +205,10 @@ pub fn command(runsc: &Path, session: &Path, bundle: &Bundle, id: &str) -> Comma
 }
 
 pub fn find_runsc(configured: Option<&str>) -> Result<PathBuf, String> {
+    const HELP: &str = "run `make tools` in the source checkout and pass --runsc tests/tools/runsc, or install runsc on PATH from https://gvisor.dev/docs/user_guide/install/; to opt in to namespaces instead, pass --isolation ns";
     if let Some(p) = configured {
         let p = PathBuf::from(p);
-        return if p.is_file() { Ok(p) } else { Err(format!("runsc not found at {}", p.display())) };
+        return if p.is_file() { Ok(p) } else { Err(format!("gVisor's runsc not found at {} — {HELP}", p.display())) };
     }
     if let Some(path) = std::env::var_os("PATH") {
         for d in path.to_string_lossy().split(':') {
@@ -217,5 +218,5 @@ pub fn find_runsc(configured: Option<&str>) -> Result<PathBuf, String> {
             }
         }
     }
-    Err("gVisor's runsc not found — install it or pass --runsc PATH".into())
+    Err(format!("gVisor's runsc not found — {HELP}"))
 }

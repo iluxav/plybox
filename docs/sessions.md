@@ -1,5 +1,11 @@
 # Sessions: diff, apply, resume
 
+Staged edits, `diff`, `apply` and resume require `--isolation ns` with an
+overlay workspace. New runs default to gVisor with a read-only workspace:
+their sessions keep an audit record, have no saved workspace copy, and are
+listed as `no copy (gvisor)`. `discard` and `sessions --prune` can still
+remove those records. `--workspace-mode bind` writes directly in either tier.
+
 Every `plybox run` is a session: a directory under
 `~/.local/state/plybox/sessions/<name>/` (or `--session DIR`) that holds
 
@@ -62,10 +68,13 @@ conversation history. Your real folder stays the lower layer, so edits you
 made there show through wherever the session didn't replace the file. A
 changed Git `HEAD` gives a warning; uncommitted edits are not merged.
 
-Sessions made by an older plybox have no saved policy. Supply it once:
+Saved metadata or policies without an isolation field retain their original
+namespace meaning; changing the default does not migrate old sessions.
+The oldest sessions have no saved policy. Supply it once, selecting `ns`
+in the policy or with a flag:
 
 ```sh
-plybox --resume rosy-heron --policy examples/claude.toml
+plybox --resume rosy-heron --isolation ns --policy examples/claude.toml
 ```
 
 ## The record

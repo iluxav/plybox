@@ -45,7 +45,7 @@ def metadata(name):
 
 
 def start(name, command, *options):
-    return call("run", "--quiet", "--session", base / name, "--work", work, *options,
+    return call("run", "--isolation", "ns", "--quiet", "--session", base / name, "--work", work, *options,
                 "--", "sh", "-c", command)
 
 
@@ -97,6 +97,22 @@ try:
     call("run", "--session", base / "saved-files", "--work", work, "--", "true", ok=False)
     checked("--session cannot overwrite an existing run", before == (base / "saved-files/meta.json").read_bytes())
 
+    # Missing isolation in saved state must retain its historical ns meaning,
+    # independently of the defaults for a newly supplied policy.
+    for missing in [("meta",), ("policy",), ("meta", "policy")]:
+        legacy = metadata("saved-files")
+        if "meta" in missing:
+            legacy.pop("isolation")
+        if "policy" in missing:
+            legacy["policy"].pop("isolation")
+            legacy["policy"]["fs"].pop("workspace_mode")
+        (base / "saved-files/meta.json").write_text(json.dumps(legacy))
+        call("--resume", "saved-files", "--quiet", "--", "sh", "-c", "test -f latest")
+        saved = metadata("saved-files")
+        checked(f"legacy missing isolation in {' and '.join(missing)} stays ns",
+                saved["isolation"] == saved["policy"]["isolation"] == "ns"
+                and saved["policy"]["fs"]["workspace_mode"] == "overlay")
+
     # Simulate metadata written by the old binary (no policy/isolation fields).
     legacy = dict(original)
     legacy.pop("policy")
@@ -105,7 +121,7 @@ try:
     p = call("--resume", "saved-files", "--", "true", ok=False)
     checked("legacy sessions require explicit policy instead of silently using defaults", "--policy" in p.stderr)
     policy = root / "legacy.toml"
-    policy.write_text('[net]\nallow = ["example.com"]\n')
+    policy.write_text('isolation = "ns"\n[net]\nallow = ["example.com"]\n')
     call("--resume", "saved-files", "--policy", policy, "--quiet", "--", "sh", "-c", "test -f latest")
     call("--resume", "saved-files", "--quiet", cwd="/")
     checked("legacy session resumes with policy once, then uses saved policy")

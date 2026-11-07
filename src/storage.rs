@@ -40,7 +40,7 @@ impl Caps {
             return Err("file_size exceeds the maximum Linux file size".into());
         }
         if (disk.is_some() || tmpfs.is_some()) && pol.isolation != "ns" {
-            return Err("disk/tmpfs caps currently require namespace isolation; gVisor is not verified for these caps".into());
+            return Err("disk/tmpfs caps currently require namespace isolation; add --isolation ns (gVisor is not verified for these caps)".into());
         }
         if disk.is_some() && pol.fs.workspace_mode != "overlay" {
             return Err("disk caps require an overlay workspace; bind writes are outside the session volume".into());
@@ -162,7 +162,7 @@ mod tests {
     }
     #[test]
     fn scratch_capacity_never_exceeds_requested_total() {
-        let mut p = Policy::default();
+        let mut p = Policy { isolation: "ns".into(), ..Policy::default() };
         p.limits.tmpfs = Some("16385".into());
         let c = Caps::parse(&p).unwrap();
         assert_eq!(c.scratch_mount_bytes(), Some(4096));

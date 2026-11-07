@@ -1,6 +1,8 @@
 # Storage and traffic limits
 
 ```toml
+isolation = "ns"  # tmpfs and disk caps require explicit namespace isolation
+
 [limits]
 file_size = "256M"
 tmpfs = "192M"
@@ -46,7 +48,7 @@ This version does **not** create a per-directory quota on an ordinary host
 disk. Provision a bounded filesystem and put the session there:
 
 ```sh
-plybox run --session /srv/agent-volume/session --disk 1G \
+plybox run --isolation ns --session /srv/agent-volume/session --disk 1G \
   --tmpfs 192M --file-size 256M -- python3 agent.py
 ```
 
@@ -59,7 +61,8 @@ use a separate volume per session when independent capacity is needed.
 Plybox checks **total capacity**, not currently free space, before executing
 the command, and repeats the check on resume. It rejects unsupported
 filesystems, oversized volumes, and existing nested mounts within the session. Disk caps require namespace isolation and an overlay workspace;
-bind mode and gVisor currently reject them. Scratch caps also currently
+bind mode rejects them. The default gVisor tier also refuses them, with
+guidance to pass `--isolation ns`. No tier switch is automatic. Scratch caps also currently
 require namespace isolation, and bubblewrap 0.9 or newer for its tmpfs
 `--size` option (Debian 12 ships 0.8, Ubuntu 22.04 0.6): plybox checks the
 version and refuses with that reason instead of a bwrap "Unknown option". No automatic fallback to a disk-usage poller.

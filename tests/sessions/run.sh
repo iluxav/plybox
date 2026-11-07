@@ -15,7 +15,7 @@ check() { # name, condition-exit-code, detail
   if [ "$2" -eq 0 ]; then printf 'check\t%-46s\tpass\t%s\n' "$1" "$3"
   else printf 'check\t%-46s\tFAIL\t%s\n' "$1" "$3"; FAILS=$((FAILS+1)); fi
 }
-run() { "$PLYBOX" run --quiet --work "$1" -- sh -c "$2" >/dev/null 2>&1; }
+run() { "$PLYBOX" run --isolation ns --quiet --work "$1" -- sh -c "$2" >/dev/null 2>&1; }
 # The newest session, as plybox itself resolves `--last` (it names the
 # session it picked on stderr).
 last() { "$PLYBOX" diff --last 2>&1 >/dev/null | sed -n 's/^plybox: session //p'; }
@@ -48,7 +48,7 @@ out="$("$PLYBOX" diff "$S1" 2>&1)"; code=$?
 check "diff of an applied session explains itself" $? "$(echo "$out" | head -1 | cut -c1-80)"
 WC="$T/wsc"; mkdir -p "$WC"
 # A secret makes plybox create a session CA and trust bundle for the run.
-"$PLYBOX" run --quiet --work "$WC" --secret 'TOK=lab-fake-value@example.com' -- sh -c 'echo c > c.txt; test -s /run/plybox/ca.pem && echo yes > had-ca.txt' >/dev/null 2>&1
+"$PLYBOX" run --isolation ns --quiet --work "$WC" --secret 'TOK=lab-fake-value@example.com' -- sh -c 'echo c > c.txt; test -s /run/plybox/ca.pem && echo yes > had-ca.txt' >/dev/null 2>&1
 SC="$(last)"; DC="$XDG_STATE_HOME/plybox/sessions/$SC"
 [ "$("$PLYBOX" diff "$SC" 2>/dev/null | grep -c had-ca.txt)" = 1 ]; check "a run with a secret had its CA while running" $? "$SC"
 [ ! -e "$DC/ca.pem" ] && [ ! -e "$DC/bundle.pem" ] && [ ! -e "$DC/sock/proxy.sock" ] && [ -d "$DC/upper" ]
@@ -58,7 +58,7 @@ check "run end removes CA, bundle, socket; keeps the copy" $? "left: $(ls -A "$D
 # --- 1c. diff --patch: the lines, and never the target of a symlink ----------
 WP="$T/wsp"; mkdir -p "$WP"; printf 'one\ntwo\n' > "$WP/f.txt"; printf 'gone line\n' > "$WP/del.txt"
 CANARY="$T/canary.txt"; echo "CANARY-$$-not-for-the-box" > "$CANARY"
-"$PLYBOX" run --quiet --work "$WP" -- sh -c "printf 'one\nTWO\n' > f.txt; echo hello > new.txt; unlink del.txt; ln -s '$CANARY' peek" >/dev/null 2>&1
+"$PLYBOX" run --isolation ns --quiet --work "$WP" -- sh -c "printf 'one\nTWO\n' > f.txt; echo hello > new.txt; unlink del.txt; ln -s '$CANARY' peek" >/dev/null 2>&1
 SP="$(last)"; "$PLYBOX" diff "$SP" --patch > "$T/patch.txt" 2>&1; code=$?
 [ $code -eq 0 ] && grep -qx -- '-two' "$T/patch.txt" && grep -qx -- '+TWO' "$T/patch.txt" && grep -qx -- '+hello' "$T/patch.txt" && grep -qx -- '-gone line' "$T/patch.txt" && grep -q -- '--- a/f.txt' "$T/patch.txt"
 check "diff --patch shows edited, added and deleted lines" $? "$(grep -c '^[-+][^-+]' "$T/patch.txt") changed lines"
@@ -72,7 +72,7 @@ check "diff --patch names a symlink, never reads its target" $? "$(grep 'symlink
 WL="$T/wsl"; mkdir -p "$WL"
 SL="$T/$(printf 'v%.0s' $(seq 1 90))/long-session"; mkdir -p "$(dirname "$SL")"
 s=$(date +%s%N)
-"$PLYBOX" run --quiet --session "$SL" --work "$WL" -- sh -c 'echo long > long.txt' >"$T/long.out" 2>&1; code=$?
+"$PLYBOX" run --isolation ns --quiet --session "$SL" --work "$WL" -- sh -c 'echo long > long.txt' >"$T/long.out" 2>&1; code=$?
 ms=$(( ($(date +%s%N) - s) / 1000000 ))
 [ $code -eq 0 ] && [ -f "$SL/upper/long.txt" ] && [ $ms -lt 1500 ]
 check "session path over the socket limit still runs" $? "socket path $(( ${#SL} + 16 )) bytes, ${ms} ms, exit $code $(head -c 80 "$T/long.out")"
@@ -80,7 +80,7 @@ check "session path over the socket limit still runs" $? "socket path $(( ${#SL}
 
 # --- 1e. exposure: every host reach shown at start and recorded, no values ---
 WE="$T/wse"; mkdir -p "$WE"; TOKF="$T/tok"; echo "lab-token-$$" > "$TOKF"; chmod 600 "$TOKF"
-"$PLYBOX" run --work "$WE" --ro-bind "$W1:/opt/peek" --secret-file "TOK=$TOKF@example.com" -- true >"$T/exp.out" 2>&1
+"$PLYBOX" run --isolation ns --work "$WE" --ro-bind "$W1:/opt/peek" --secret-file "TOK=$TOKF@example.com" -- true >"$T/exp.out" 2>&1
 SE="$(last)"; RE="$XDG_STATE_HOME/plybox/sessions/$SE/record.jsonl"
 grep -qF "reads   $W1 at /opt/peek (read-only)" "$T/exp.out" && grep -qF "secret  TOK from file $TOKF" "$T/exp.out" \
   && grep '"start"' "$RE" | grep -q '"kind":"ro_bind"' && grep '"start"' "$RE" | grep -q '"kind":"secret_file"' \
@@ -108,8 +108,8 @@ check "write through a dir symlink out: refused, nothing applied" $? "$(echo "$m
 echo "$S1" | grep -Eq '^[a-z]+-[a-z]+(-[0-9]+)?$'; check "new session gets a two-word name" $? "$S1"
 SB="$XDG_STATE_HOME/plybox/sessions"
 WN="$T/wsn"; mkdir -p "$WN"
-"$PLYBOX" run --quiet --session "$SB/alpha-one" --work "$WN" -- sh -c 'echo 1 > one.txt' >/dev/null 2>&1
-"$PLYBOX" run --quiet --session "$SB/alpha-two" --work "$WN" -- sh -c 'echo 2 > two.txt' >/dev/null 2>&1
+"$PLYBOX" run --isolation ns --quiet --session "$SB/alpha-one" --work "$WN" -- sh -c 'echo 1 > one.txt' >/dev/null 2>&1
+"$PLYBOX" run --isolation ns --quiet --session "$SB/alpha-two" --work "$WN" -- sh -c 'echo 2 > two.txt' >/dev/null 2>&1
 out="$("$PLYBOX" diff alpha-o 2>&1)"; echo "$out" | grep -q 'one.txt' && ! echo "$out" | grep -q 'two.txt'
 check "unique prefix selects one session" $? "alpha-o → $(echo "$out" | head -1)"
 out="$("$PLYBOX" diff alp 2>&1)"; code=$?; [ $code -ne 0 ] && echo "$out" | grep -q 'alpha-one' && echo "$out" | grep -q 'alpha-two'

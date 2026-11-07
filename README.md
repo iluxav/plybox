@@ -19,14 +19,14 @@ plybox runs a command (an agent, a script, a build) in a box that:
   connection is logged.
 - **never sees your API keys.** The box holds a placeholder; plybox swaps in
   the real key on the way out, and only toward the host the key belongs to.
-- **can't touch your files.** It works on a copy of your folder. You review
-  the changes, then apply them or throw them away.
+- **can't change your folder by default.** gVisor mounts it read-only. With
+  `--isolation ns`, edits are staged in a copy for you to review and apply.
 
-It is one static binary. No root, no daemon, no Docker. A box starts in about
-4 ms.
+plybox is a static binary and uses gVisor’s `runsc` by default (installed
+separately for now). No root, no daemon, no Docker, no KVM.
 
 ```console
-$ plybox run --policy claude.toml -- claude -p "fix the failing tests" --dangerously-skip-permissions
+$ plybox run --isolation ns --policy claude.toml -- claude -p "fix the failing tests" --dangerously-skip-permissions
 $ plybox diff        # what the agent changed, held in the session
 M  src/parser.rs
 A  tests/parser_edge_cases.rs
@@ -60,28 +60,11 @@ else exists inside the box.
 
 ## Install
 
-**1. Get bubblewrap 0.11 or newer**, which plybox uses for Linux namespaces:
-
-```sh
-sudo pacman -S bubblewrap        # Arch
-sudo dnf install bubblewrap      # Fedora
-sudo apt install bubblewrap      # Debian, Ubuntu
-bwrap --version                  # needs 0.11+
-```
-
-<details>
-<summary>Older distributions ship an older bubblewrap (Ubuntu 24.04: 0.9, Debian 12: 0.8). Build a current one:</summary>
-
-```sh
-sudo apt install git meson ninja-build pkg-config libcap-dev
-git clone --depth 1 --branch v0.11.2 https://github.com/containers/bubblewrap
-cd bubblewrap && meson setup _build -Dman=disabled -Dtests=false
-ninja -C _build && sudo ninja -C _build install      # → /usr/local/bin/bwrap
-```
-
-With an older bubblewrap, only `--workspace-mode bind` on your own tools
-works: no workspace copy, no images.
-</details>
+**1. Get gVisor's `runsc`**, following the [gVisor installation guide](https://gvisor.dev/docs/user_guide/install/),
+and `unshare` from util-linux. Put `runsc` on `PATH`, or pass `--runsc PATH`.
+From a source checkout, `make tools` fetches the pinned runtime into
+`tests/tools/runsc`; use `--runsc tests/tools/runsc` with that copy.
+Missing runsc is an error; plybox never falls back to namespaces.
 
 **2. Get plybox**, a single static binary:
 
@@ -101,13 +84,43 @@ make install        # → ~/.local/bin/plybox   (make uninstall removes it)
 ```
 </details>
 
+**3. Optional: get bubblewrap 0.11 or newer** for `--isolation ns`,
+including staged edits, `diff`/`apply` and resume:
+
+```sh
+sudo pacman -S bubblewrap        # Arch
+sudo dnf install bubblewrap      # Fedora
+sudo apt install bubblewrap      # Debian, Ubuntu
+bwrap --version                  # needs 0.11+
+```
+
+<details>
+<summary>Older distributions ship an older bubblewrap (Ubuntu 24.04: 0.9, Debian 12: 0.8). Build a current one:</summary>
+
+```sh
+sudo apt install git meson ninja-build pkg-config libcap-dev
+git clone --depth 1 --branch v0.11.2 https://github.com/containers/bubblewrap
+cd bubblewrap && meson setup _build -Dman=disabled -Dtests=false
+ninja -C _build && sudo ninja -C _build install      # → /usr/local/bin/bwrap
+```
+
+In the namespace tier with an older bubblewrap, only `--workspace-mode bind`
+on your own tools works: no workspace copy, no images.
+</details>
+
 ## Quick start
 
 Run something in a box. With no flags, the box has no network, sees your
-system tools read-only, and works on a copy of the current folder:
+system tools and the current folder read-only, and runs under gVisor:
+
+```sh
+plybox run -- sh -c 'echo hello > /tmp/note.txt; cat /tmp/note.txt'
+```
+
+To stage changes for review, explicitly select the namespace tier:
 
 ```console
-$ plybox run -- sh -c 'echo hello > note.txt; curl -sS https://example.com'
+$ plybox run --isolation ns -- sh -c 'echo hello > note.txt; curl -sS https://example.com'
 plybox: box up (ns) — network: none; secrets: 0; workspace /home/me/demo at /work (overlay); …
 curl: (7) CONNECT tunnel failed, response 403
 plybox: box exited 7; 1 workspace change(s) held in session lively-fern
@@ -120,7 +133,7 @@ $ plybox run --quiet --allow example.com -- curl -s -o /dev/null -w '%{http_code
 200
 ```
 
-See what a box changed, then keep it or drop it:
+See what that namespace box changed, then keep it or drop it:
 
 ```console
 $ plybox diff lively-fern
@@ -157,7 +170,8 @@ plybox diff --patch && plybox apply
 [`examples/claude.toml`](examples/claude.toml) is a complete policy for Claude
 Code on a Rust project. It mounts in the agent's install directory and the
 Rust toolchain, allows `api.anthropic.com` and crates.io, and passes your
-subscription token as a secret the box never sees.
+subscription token as a secret the box never sees. It explicitly selects
+`isolation = "ns"` for staged edits.
 
 Tools installed under your home (`~/.local`, mise, nvm, rustup) don't exist in
 the box until you mount them with `--ro-bind`, or run an image that has them.
@@ -191,19 +205,19 @@ plybox run --image python:3.13-slim --allow pypi.org --allow files.pythonhosted.
   -- sh -c 'pip install -r requirements.txt && python3 main.py'
 ```
 
-For code you trust even less, add `--isolation gvisor`. The box then runs on
-gVisor's user-space kernel, so the workload never talks to your kernel
-directly. It starts in about 20 ms.
+These runs use gVisor’s user-space kernel by default. The workspace is
+read-only; `$HOME` and `/tmp` are writable and disappear at exit.
 
 ### Use any tool without installing it: OCI images, no Docker
 
 `--image` makes a container image the box's filesystem. plybox pulls it
-itself, checks every layer's sha256 and caches it:
+itself, checks every layer's sha256 and caches it. Examples that write to
+your folder use `--workspace-mode bind`; those writes take effect immediately:
 
 ```sh
 plybox run --image python:3.13-slim -- python3 script.py
-plybox run --image node:22-slim --allow registry.npmjs.org -- sh -c 'npm install && node index.js'
-plybox run --image mwader/static-ffmpeg:7.1 -- /ffmpeg -i in.mov out.mp4
+plybox run --image node:22-slim --workspace-mode bind --allow registry.npmjs.org -- sh -c 'npm install && node index.js'
+plybox run --image mwader/static-ffmpeg:7.1 --workspace-mode bind -- /ffmpeg -i in.mov out.mp4
 ```
 
 ### Find out what an agent needs, then lock it down
@@ -240,7 +254,7 @@ messages, and `--workspace-mode bind` writes straight into the folder when
 there's nothing to review.
 
 ```sh
-plybox run --quiet --image node:22-slim --allow registry.npmjs.org -- sh -c 'npm ci && npm test'
+plybox run --quiet --image node:22-slim --workspace-mode bind --allow registry.npmjs.org -- sh -c 'npm ci && npm test'
 ```
 
 ## How it works
@@ -254,8 +268,8 @@ plybox run --quiet --image node:22-slim --allow registry.npmjs.org -- sh -c 'npm
  │    │                                                                    │
  │    │ one unix socket: the box's only way out                            │
  │  ┌─┴───────────────────────────────────────────────────────────────┐    │
- │  │ the box (bubblewrap namespaces, or gVisor)                      │    │
- │  │   /work        a copy of your folder; edits held for review     │    │
+ │  │ the box (gVisor by default; namespace opt-in)                   │    │
+ │  │   /work        read-only by default; ns stages edits            │    │
  │  │   /usr         host tools or an OCI image, read-only            │    │
  │  │   $HOME, /tmp  empty, gone at exit                              │    │
  │  │   loopback only · no capabilities · seccomp · Landlock          │    │
@@ -264,9 +278,9 @@ plybox run --quiet --image node:22-slim --allow registry.npmjs.org -- sh -c 'npm
 ```
 
 - **Files.** The box gets its own mount namespace. Your folder is mounted at
-  `/work` as an overlay: reads come from your folder, writes land in the
-  session. Your home, other projects and `/etc` (apart from a few basics like
-  CA certificates) don't exist inside.
+  `/work` read-only by default. With `--isolation ns`, an overlay holds
+  writes in the session until you apply them. Your home, other projects and
+  `/etc` (apart from a few basics like CA certificates) don't exist inside.
 - **Network.** The box has loopback only. Programs reach out through
   `HTTPS_PROXY`, which plybox sets. The proxy decides by **hostname**, before
   any connection exists. It refuses names that resolve to private or loopback
@@ -274,8 +288,9 @@ plybox run --quiet --image node:22-slim --allow registry.npmjs.org -- sh -c 'npm
 - **Secrets.** For the host a secret belongs to, the proxy terminates TLS with
   a per-session CA that the box trusts, replaces placeholders in the request,
   and re-encrypts toward the real server.
-- **Kernel.** A seccomp allowlist (unknown syscalls fail), no capabilities,
-  `no_new_privs`, no nested user namespaces, and Landlock where the kernel has
+- **Kernel.** gVisor’s user-space kernel by default; `--isolation ns` opts
+  into sharing the host kernel. A seccomp allowlist (unknown syscalls fail),
+  no capabilities, `no_new_privs`, no nested user namespaces, and Landlock where the kernel has
   it. io_uring, ptrace, keyrings, raw sockets and the like are gone.
 - **Limits.** Memory, processes and CPU through cgroup v2. plybox uses its own
   cgroup when it can, otherwise `systemd-run --user`. You can also cap file
@@ -293,7 +308,7 @@ Everything you can pass as a flag can also live in a TOML file. Use
 # agent.toml — plybox run --policy agent.toml -- claude -p "…"
 
 image = "node:22-slim"          # optional: an OCI image as the box's root
-isolation = "ns"                # "ns" (namespaces) or "gvisor"
+isolation = "ns"                # explicit opt-in for staging; default is "gvisor"
 
 [fs]
 workspace = "."                 # the folder mounted at /work
@@ -322,11 +337,11 @@ NODE_ENV = "development"
 | Section | Key | Meaning | Default |
 |---|---|---|---|
 | top | `image` | OCI image to use as the box's root | none: host tools |
-| top | `isolation` | `ns` or `gvisor` | `ns` |
+| top | `isolation` | `ns` or `gvisor` | `gvisor` |
 | top | `runsc` | path to gVisor's `runsc` | found on `PATH` |
 | `[fs]` | `rootfs` | `host` (your `/usr`, read-only) or a directory | `host` |
 | `[fs]` | `workspace` | folder mounted at `/work` | `.` |
-| `[fs]` | `workspace_mode` | `overlay` (copy, review, apply) or `bind` (direct) | `overlay` |
+| `[fs]` | `workspace_mode` | `readonly` (gVisor), `overlay` (ns copy), or `bind` (direct) | `auto`: readonly for gVisor, overlay for ns |
 | `[fs]` | `ro_bind` | extra read-only mounts, `HOST:BOX` (`~/` allowed) | none |
 | `[net]` | `allow` | `host`, `*.domain` (subdomains only), `host:port` | none: no network |
 | `[secrets]` | `NAME = { only = HOST }` | value from plybox's environment variable `NAME` | |
@@ -365,7 +380,7 @@ most recent session is used.
 | Option | Meaning |
 |---|---|
 | `--policy FILE` | load a TOML policy; other flags add to or override it |
-| `--isolation ns\|gvisor` | namespaces (default), or gVisor's user-space kernel |
+| `--isolation ns\|gvisor` | gVisor’s user-space kernel (default), or explicit namespace opt-in |
 | `--runsc PATH` | gVisor's `runsc` binary |
 | `--image IMAGE` | use an OCI image as the box's root (pulled and cached on first use) |
 | `--rootfs host\|DIR` | the host's `/usr` read-only (default), or a directory |
@@ -375,7 +390,7 @@ most recent session is used.
 | Option | Meaning |
 |---|---|
 | `--work DIR` | folder mounted at `/work` (default: current directory) |
-| `--workspace-mode overlay\|bind` | `overlay`: writes held for `diff`/`apply` (default) · `bind`: write directly |
+| `--workspace-mode auto\|readonly\|overlay\|bind` | `auto` (default): readonly for gVisor, overlay for ns · `bind`: write directly · explicit `overlay` requires ns |
 | `--ro-bind HOST:BOX` | mount a host path read-only inside the box (repeatable) |
 
 **Network and secrets**
@@ -403,8 +418,8 @@ most recent session is used.
 | `--pids N` | maximum number of processes |
 | `--cpu CORES` | CPU limit in cores (`0.5`, `2`) |
 | `--file-size SIZE` | largest file the box may write |
-| `--tmpfs SIZE` | total size of `/tmp`, `$HOME` and `/dev/shm` |
-| `--disk SIZE` | total session disk; needs a provisioned volume (see [docs/limits.md](docs/limits.md)) |
+| `--tmpfs SIZE` | total size of `/tmp`, `$HOME` and `/dev/shm`; requires `--isolation ns` |
+| `--disk SIZE` | namespace tier only; total session disk; needs a provisioned volume (see [docs/limits.md](docs/limits.md)) |
 | `--bytes-out SIZE`, `--bytes-in SIZE` | network traffic budget for the whole run |
 
 **Sessions and output**
@@ -412,7 +427,7 @@ most recent session is used.
 | Option | Meaning |
 |---|---|
 | `--session DIR` | keep this session in `DIR` instead of the default location |
-| `--resume SESSION` | continue a session: same saved copy, same policy, fresh processes |
+| `--resume SESSION` | continue a namespace overlay session: same saved copy, same policy, fresh processes |
 | `--quiet` | hide plybox's status lines (warnings and errors still print) |
 
 ### Inside the box
@@ -428,10 +443,11 @@ most recent session is used.
 ### Sessions
 
 Each run is a session, stored in `~/.local/state/plybox/sessions/<name>/`
-(`$XDG_STATE_HOME`). It holds the copy of your changes and the record.
+(`$XDG_STATE_HOME`). Every tier keeps a record; only namespace overlay
+sessions hold a saved copy for `diff`, `apply` and resume.
 
 - **`plybox sessions`** lists every session: `PENDING n` (changes not applied
-  yet), `applied`, `no changes`, `running`, or `no copy (bind)`.
+  yet), `applied`, `no changes`, `running`, `no copy (bind)`, or `no copy (gvisor)`.
 - **`plybox sessions --prune`** removes sessions that are applied or empty.
   Pending ones stay.
 - **`plybox apply`** treats the session as untrusted. It never writes through
@@ -473,8 +489,8 @@ either.
 
 - **Exfiltration through a host you allowed.** If the box may reach
   `github.com`, it can post data there. Keep the allow list short.
-- **Kernel bugs.** In the namespace tier the box shares your kernel. For
-  hostile code, use `--isolation gvisor`.
+- **Kernel bugs.** gVisor adds a user-space kernel boundary by default.
+  Opting into `--isolation ns` shares the host kernel with the workload.
 - **Bad changes you approve.** `apply` copies what the agent wrote. Read
   `plybox diff` first.
 
@@ -483,17 +499,17 @@ Found a hole? Please report it privately; see [SECURITY.md](SECURITY.md).
 ## Requirements
 
 - Linux on x86_64, with unprivileged user namespaces (kernel 5.11+).
-- For the default namespace tier:
+- For the default gVisor tier: gVisor's
+  [`runsc`](https://gvisor.dev/docs/user_guide/install/) and `unshare` from
+  util-linux (with `--map-current-user` and `--keep-caps` support).
+  This tier does not use bubblewrap. The workload keeps your user ID,
+  so bind-mode files remain yours on the host.
+- For the optional `--isolation ns` tier:
   [bubblewrap](https://github.com/containers/bubblewrap) 0.11 or newer. The
   workspace copy and `--image` use its overlay mounts. See
   [Install](#install) for Ubuntu 24.04 and Debian 12.
 - For memory, process and CPU limits: cgroup v2, plus a user systemd session
   on desktops.
-- For `--isolation gvisor`: gVisor's
-  [`runsc`](https://gvisor.dev/docs/user_guide/install/) and `unshare` from
-  util-linux (with `--map-current-user` and `--keep-caps` support).
-  This tier does not use bubblewrap. The workload keeps your user ID,
-  so bind-mode files remain yours on the host.
 - Optional: Landlock (kernel 5.13+). plybox applies it when the kernel has it.
 
 So far plybox has been tested on Arch-based Linux (kernel 6.x–7.x). If
@@ -510,7 +526,7 @@ through AppArmor.
   `--workspace-mode bind` to write directly into your folder; those edits
   take effect immediately, without a review/apply step. Writes to `$HOME`
   and `/tmp` vanish at exit. Staged workspace edits, `--tmpfs` and `--disk`
-  are namespace-tier only.
+  require explicit `--isolation ns`; they are refused under gVisor.
 
 ## FAQ
 
@@ -537,7 +553,7 @@ security profile blocks.
 
 **Is the namespace tier enough?** For an agent you trust that might be
 manipulated, yes: it closes every door the test suite measures. For code that
-is hostile on purpose, add `--isolation gvisor`.
+is hostile on purpose, keep the default gVisor tier.
 
 ## Documentation
 

@@ -272,6 +272,23 @@ mod tests {
     }
 
     #[test]
+    fn forced_tier_precedes_workspace_defaults_and_storage_validation() {
+        let mut p = Policy::default();
+        p.limits.tmpfs = Some("3M".into());
+        apply_to(&op("host_rootfs = true\npaths = ['/']\nisolation = 'ns'"), &mut p).unwrap();
+        p.resolve_workspace_mode().unwrap();
+        assert_eq!(p.isolation, "ns");
+        assert_eq!(p.fs.workspace_mode, "overlay");
+        assert!(crate::storage::Caps::parse(&p).is_ok());
+        apply_to(&op("host_rootfs = true\npaths = ['/']\nisolation = 'gvisor'"), &mut p).unwrap();
+        assert_eq!(p.isolation, "gvisor");
+        assert!(p.resolve_workspace_mode().unwrap_err().contains("--isolation ns"));
+        p.fs.workspace_mode = "auto".into();
+        p.resolve_workspace_mode().unwrap();
+        assert!(crate::storage::Caps::parse(&p).unwrap_err().contains("--isolation ns"));
+    }
+
+    #[test]
     fn hosts_must_be_inside_the_ceiling() {
         let o = op("host_rootfs = true\npaths = ['/']\nhosts = ['*.example.com', 'api.other.com']");
         for ok in [vec!["a.example.com"], vec!["*.b.example.com"], vec!["api.other.com"], vec![]] {

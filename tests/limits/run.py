@@ -30,7 +30,7 @@ with tempfile.TemporaryDirectory(prefix='plybox-limits-') as t:
         global number
         number += 1
         session = session or t / f'session-{number}'
-        argv = [BIN, 'run', '--quiet', '--work', str(work),
+        argv = [BIN, 'run', '--isolation', 'ns', '--quiet', '--work', str(work),
                 '--resume' if resume else '--session', str(session), *opts, '--', program, code_flag, code]
         p = subprocess.run(argv, env=env, text=True, capture_output=True, timeout=20)
         assert p.returncode == expect, (argv, p.returncode, p.stdout, p.stderr)
@@ -96,7 +96,7 @@ for d in ['/dev','/']:
 
     for opts in [('--disk','1M'),('--disk','0'),('--tmpfs','1K'),('--bytes-in','18446744073709551615G'),
                  ('--isolation','gvisor','--disk','16M'),('--workspace-mode','bind','--disk','16M')]:
-        p = subprocess.run([BIN,'run','--work',str(work),*opts,'--','touch','must-not-run'],env=env,capture_output=True,timeout=10)
+        p = subprocess.run([BIN,'run','--isolation','ns','--work',str(work),*opts,'--','touch','must-not-run'],env=env,capture_output=True,timeout=10)
         assert p.returncode != 0, opts
     assert not (work/'must-not-run').exists()
     print('PASS invalid/unsupported caps refuse execution', flush=True)
@@ -107,7 +107,7 @@ for d in ['/dev','/']:
     fake = t / 'oldbwrap'; fake.mkdir()
     (fake/'bwrap').write_text('#!/bin/sh\n[ "$1" = --version ] && echo "bubblewrap 0.8.0" && exit 0\nexit 99\n')
     (fake/'bwrap').chmod(0o755)
-    p = subprocess.run([BIN,'run','--work',str(work),'--tmpfs','3M','--','touch','must-not-run'],
+    p = subprocess.run([BIN,'run','--isolation','ns','--work',str(work),'--tmpfs','3M','--','touch','must-not-run'],
                        env={**env,'PATH':f"{fake}:{os.environ['PATH']}"},capture_output=True,text=True,timeout=10)
     assert p.returncode != 0 and 'bubblewrap 0.9 or newer' in p.stderr and '0.8.0' in p.stderr, p.stderr
     assert not (work/'must-not-run').exists()
@@ -117,9 +117,9 @@ for d in ['/dev','/']:
     # 0.10.0 lacks them (measured in CI). Bind mode on host tools needs none.
     (fake/'bwrap').write_text('#!/bin/sh\n[ "$1" = --version ] && echo "bubblewrap 0.10.0" && exit 0\nexit 99\n')
     old = {**env,'PATH':f"{fake}:{os.environ['PATH']}"}
-    p = subprocess.run([BIN,'run','--work',str(work),'--','touch','must-not-run'],env=old,capture_output=True,text=True,timeout=10)
+    p = subprocess.run([BIN,'run','--isolation','ns','--work',str(work),'--','touch','must-not-run'],env=old,capture_output=True,text=True,timeout=10)
     assert p.returncode != 0 and 'bubblewrap 0.11 or newer' in p.stderr and '0.10.0' in p.stderr, p.stderr
-    p = subprocess.run([BIN,'run','--work',str(work),'--workspace-mode','bind','--','true'],env=old,capture_output=True,text=True,timeout=10)
+    p = subprocess.run([BIN,'run','--isolation','ns','--work',str(work),'--workspace-mode','bind','--','true'],env=old,capture_output=True,text=True,timeout=10)
     assert p.returncode == 99 and 'bubblewrap 0.11' not in p.stderr, (p.returncode, p.stderr)
     assert not (work/'must-not-run').exists()
     print('PASS bubblewrap 0.10 is refused for overlays with a clear message; bind mode still runs', flush=True)

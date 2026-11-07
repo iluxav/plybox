@@ -1,17 +1,13 @@
 //! plybox — run an AI agent in a box whose only way out is through plybox.
 //!
-//! Slice 1 (this file set): `plybox run` builds the box the lab proved —
-//! own user/mount/pid/net/ipc/uts namespaces, loopback-only network, a
-//! hostname-deciding CONNECT proxy outside the box reached over a unix
-//! socket, a seccomp allowlist and Landlock around the workload, and a
-//! JSONL record of the session. Secrets, the copy-on-write workspace,
-//! limits and the gVisor tier follow as later slices, each gated by the
-//! probe suite in `lab/`.
+//! gVisor by default, with an explicit namespace tier for staged edits.
+//! Both use a hostname-deciding proxy outside the box, a seccomp allowlist,
+//! Landlock where supported, and a JSONL record of the session.
 //!
 //! Process tree:
 //!
 //!   plybox run (supervisor: proxy threads, record)
-//!   └─ bwrap (namespaces, mounts, loopback-only network)
+//!   └─ runsc (gVisor), or bwrap with --isolation ns
 //!      └─ plybox __inner (forwarder 127.0.0.1:3128 → proxy socket, reaper)
 //!         └─ the workload: landlock + no_new_privs + seccomp, then exec
 
@@ -40,7 +36,7 @@ fn usage() -> ! {
 }
 
 const USAGE: &str = "usage: plybox run [--policy FILE] [--image IMAGE] [--isolation ns|gvisor] [--runsc PATH]\n\
-         \x20                 [--rootfs host|DIR] [--work DIR] [--workspace-mode overlay|bind]\n\
+         \x20                 [--rootfs host|DIR] [--work DIR] [--workspace-mode auto|readonly|overlay|bind]\n\
          \x20                 [--allow HOST[:PORT]]... [--secret NAME[=VALUE]@HOST]... [--secret-file NAME=PATH@HOST]... [--ro-bind HOST:BOX]...\n\
          \x20                 [--env K=V | --env K]... [--mem SIZE] [--pids N] [--cpu CORES]\n\
          \x20                 [--disk SIZE] [--tmpfs SIZE] [--file-size SIZE] [--bytes-out SIZE] [--bytes-in SIZE]\n\
@@ -54,6 +50,12 @@ const USAGE: &str = "usage: plybox run [--policy FILE] [--image IMAGE] [--isolat
          \x20      plybox apply SESSION|--last     copy those changes onto the real workspace\n\
          \x20      plybox version\n\
          \x20      plybox help\n\
+         \n\
+         default: gvisor isolation (requires runsc and unshare), read-only workspace.\n\
+         --workspace-mode bind writes directly to the workspace.\n\
+         --isolation ns opts into bubblewrap: overlay staging, --tmpfs and --disk.\n\
+         diff, apply and resume require an existing namespace overlay session.\n\
+         workspace-mode auto (default) selects readonly for gvisor, overlay for ns.\n\
          \n\
          docs: https://github.com/iluxav/plybox#readme";
 
