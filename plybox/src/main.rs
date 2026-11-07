@@ -35,7 +35,7 @@ fn usage() -> ! {
          \x20                 [--rootfs host|DIR] [--work DIR] [--workspace-mode overlay|bind]\n\
          \x20                 [--allow HOST[:PORT]]... [--secret NAME[=VALUE]@HOST]... [--ro-bind HOST:BOX]...\n\
          \x20                 [--env K=V | --env K]... [--mem SIZE] [--pids N] [--cpu CORES]\n\
-         \x20                 [--session DIR] [--quiet] -- COMMAND [ARGS...]\n\
+         \x20                 [--learn [FILE]] [--session DIR] [--quiet] -- COMMAND [ARGS...]\n\
          \x20      plybox diff  SESSION|--last     what the box changed in its workspace copy\n\
          \x20      plybox apply SESSION|--last     copy those changes onto the real workspace\n\
          \x20      plybox version"
@@ -47,11 +47,11 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("run") => {
-            let (pol, cmd, session, quiet) = policy::from_args(&args[1..]).unwrap_or_else(|e| {
+            let (pol, cmd, opts) = policy::from_args(&args[1..]).unwrap_or_else(|e| {
                 eprintln!("plybox: {e}");
                 usage()
             });
-            match launch::run(pol, cmd, session, quiet) {
+            match launch::run(pol, cmd, opts) {
                 Ok(code) => exit(code),
                 Err(e) => {
                     eprintln!("plybox: {e}");

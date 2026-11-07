@@ -234,3 +234,11 @@ behind a 0700 sessions base; a host cgroup's pids.max does not bound
 guest processes, but RLIMIT_NPROC inside the sandbox does (fork refused at
 508 of 512). In this tier the workspace is read-only unless
 `--workspace-mode bind`.
+
+Slice 5 (2026-11-07): `--learn [FILE]`. The proxy lets every public
+destination through, records each (verdict `learned` in the record), and
+at exit writes the policy the run would have needed — the given policy
+with the observed hosts merged into `net.allow`, secrets by name only. The
+run announces loudly that it is not contained. Smoke: a learn run reached
+two hosts and wrote them; the next run with `--policy` allowed those two
+and refused a third. The full suite is unchanged: 0 open doors, both tiers.

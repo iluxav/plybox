@@ -37,6 +37,10 @@ ANTHROPIC_API_KEY=sk-… plybox run --secret ANTHROPIC_API_KEY@api.anthropic.com
   -- claude -p "fix the tests"
 plybox diff --last      # what it changed, held in the session
 plybox apply --last     # copy those changes onto your directory
+
+# Don't know what the agent needs to reach? Learn it once, then enforce it.
+plybox run --learn agent.toml -- claude -p "fix the tests"   # allows + records every destination
+plybox run --policy agent.toml -- claude -p "fix the tests"  # only those, from now on
 ```
 
 ```toml
@@ -59,15 +63,18 @@ PATH = "/opt/node/latest/bin:/usr/local/bin:/usr/bin:/bin"
 
 ## Status
 
-Slices 1–4 done. Measured by `lab/v0/run.sh` against 41 attacker probes on
-one machine, both tiers: **0 open doors** (1 unmeasurable: no ssh-agent
-there) — 0 kernel, 0 process, 0 files/secrets/IPC, 0 network, 0
+v0 complete (slices 1–5). Measured by `lab/v0/run.sh` against 41 attacker
+probes on one machine, both tiers: **0 open doors** (1 unmeasurable: no
+ssh-agent there) — 0 kernel, 0 process, 0 files/secrets/IPC, 0 network, 0
 resources — with curl, npm and node working, a secret substituted toward
 its host and withheld from another; 3 ms start (namespaces), 19 ms
-(gVisor).
+(gVisor). `--learn` records what a run reached and writes the policy for
+the next one; the record marks those connections `learned`, and the run
+itself is loudly not contained.
 
-Next: a learning mode (run in audit, generate the allow list from what the
-agent actually reached, switch to enforce).
+Known gaps: `apply` of a deletion is untested; `ioctl` is allowed for every
+request code; x86_64 only; exfiltration *through an allowed host* is not
+something any sandbox stops — keep the allow list short.
 
 Everything claimed here has a probe in `lab/`. Read `lab/README.md`.
 

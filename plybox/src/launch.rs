@@ -19,7 +19,7 @@ use serde_json::json;
 
 use crate::gvisor;
 use crate::limits::{self, Enforcer, Limits};
-use crate::policy::Policy;
+use crate::policy::{Policy, RunOpts};
 use crate::proxy::{Allow, Proxy};
 use crate::record::Record;
 use crate::secrets::{self, Secret, Tls};
@@ -27,7 +27,9 @@ use crate::workspace;
 
 const PROXY_PORT: u16 = 3128;
 
-pub fn run(pol: Policy, cmd: Vec<String>, session: Option<PathBuf>, quiet: bool) -> Result<i32, String> {
+pub fn run(pol: Policy, cmd: Vec<String>, opts: RunOpts) -> Result<i32, String> {
+    let RunOpts { session, quiet, learn } = opts;
+    let learning = learn.is_some();
     let gvisor_tier = pol.isolation == "gvisor";
     let engine: PathBuf = if gvisor_tier {
         gvisor::find_runsc(pol.runsc.as_deref())?
@@ -103,9 +105,12 @@ pub fn run(pol: Policy, cmd: Vec<String>, session: Option<PathBuf>, quiet: bool)
     }
     let maps = parse_maps(&pol.net.map)?;
 
-    let proxy = Proxy::new(allow, Arc::clone(&record), secrets::by_host(&secret_list), tls.clone(), maps);
+    let proxy = Proxy::new(allow, Arc::clone(&record), secrets::by_host(&secret_list), tls.clone(), maps, learning);
     let acceptor = Arc::clone(&proxy);
     std::thread::spawn(move || acceptor.serve(listener));
+    if learning {
+        eprintln!("plybox: LEARN MODE — every public destination is allowed and recorded; the box is NOT contained on the network for this run");
+    }
 
     record.event(
         "start",
@@ -160,6 +165,34 @@ pub fn run(pol: Policy, cmd: Vec<String>, session: Option<PathBuf>, quiet: bool)
         0
     };
     record.event("exit", json!({ "code": code, "workspace_changes": changed }));
+
+    // Learn mode: write the policy the run would have needed.
+    if let Some(out) = learn {
+        let learned = proxy.learned();
+        let mut learned_pol = pol.clone();
+        let mut allow: Vec<String> = learned_pol.net.allow.iter().cloned().chain(learned.iter().cloned()).collect();
+        allow.sort();
+        allow.dedup();
+        learned_pol.net.allow = allow;
+        let path = out.unwrap_or_else(|| session.join("learned.toml"));
+        let text = format!(
+            "# plybox policy learned on {} from: {}\n# {} destination(s) were reached that the policy did not list; review before trusting.\n\n{}",
+            uname_release(),
+            cmd.join(" "),
+            learned.len(),
+            learned_pol.to_toml()
+        );
+        std::fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))?;
+        record.event("learned", json!({ "destinations": learned, "policy": path }));
+        eprintln!(
+            "plybox: learned {} new destination(s){}{} — policy written to {}; review it, then run with --policy {}",
+            learned.len(),
+            if learned.is_empty() { "" } else { ": " },
+            learned.join(", "),
+            path.display(),
+            path.display()
+        );
+    }
     if !quiet && overlay && !gvisor_tier {
         eprintln!(
             "plybox: box exited {code}; {changed} workspace change(s) held in the session — `plybox diff {0}` / `plybox apply {0}`",

@@ -19,9 +19,9 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Policy {
     #[serde(default)]
@@ -29,13 +29,13 @@ pub struct Policy {
     #[serde(default)]
     pub net: Net,
     /// Environment inside the box. Values here win over the defaults.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
     /// Secrets the box must never hold: `NAME = { only = "host" }` takes the
     /// value from the caller's environment variable NAME; add `value = "…"`
     /// for a literal. The box gets a placeholder under NAME; the proxy swaps
     /// it for the value only toward `only`.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub secrets: BTreeMap<String, SecretSpec>,
     /// Per-box limits: `mem = "512M"`, `pids = 512`, `cpu = 1.5` (cores).
     #[serde(default)]
@@ -45,7 +45,7 @@ pub struct Policy {
     #[serde(default = "default_isolation")]
     pub isolation: String,
     /// Path to gVisor's `runsc` (default: found on PATH).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runsc: Option<String>,
 }
 
@@ -53,26 +53,43 @@ fn default_isolation() -> String {
     "ns".into()
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+// By hand, so `Policy::default()` agrees with the serde defaults (a derived
+// Default would leave `isolation` empty).
+impl Default for Policy {
+    fn default() -> Self {
+        Policy {
+            fs: Fs::default(),
+            net: Net::default(),
+            env: BTreeMap::new(),
+            secrets: BTreeMap::new(),
+            limits: LimitsSpec::default(),
+            isolation: default_isolation(),
+            runsc: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct LimitsSpec {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mem: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pids: Option<u32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cpu: Option<f64>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct SecretSpec {
     pub only: String,
-    #[serde(default)]
+    /// A literal value. Never written back out by `--learn`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Fs {
     /// `"host"` or a directory to use as `/`.
@@ -87,7 +104,7 @@ pub struct Fs {
     #[serde(default = "default_workspace_mode")]
     pub workspace_mode: String,
     /// Extra read-only binds, `HOSTPATH:BOXPATH`.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ro_bind: Vec<String>,
 }
 
@@ -108,7 +125,7 @@ fn default_workspace() -> PathBuf {
     PathBuf::from(".")
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct Net {
     /// Hostnames the proxy will connect to: `host`, `*.suffix`, `host:port`.
@@ -117,15 +134,34 @@ pub struct Net {
     pub allow: Vec<String>,
     /// Extra PEM roots the proxy trusts when it talks to upstreams (test
     /// servers with their own CA). Normal use needs none.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub trust_ca: Vec<String>,
     /// `host=ip:port`: resolve `host` to a fixed address instead of DNS, and
     /// skip the public-address rule for it. For test upstreams only.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub map: Vec<String>,
 }
 
+/// What `run` was asked to do beyond the policy.
+#[derive(Debug, Clone, Default)]
+pub struct RunOpts {
+    pub session: Option<PathBuf>,
+    pub quiet: bool,
+    /// Learn mode: allow every public destination, record each, and write
+    /// the resulting policy here at exit (default `<session>/learned.toml`).
+    pub learn: Option<Option<PathBuf>>,
+}
+
 impl Policy {
+    /// The policy as a file: secrets keep only their host (never a value).
+    pub fn to_toml(&self) -> String {
+        let mut p = self.clone();
+        for s in p.secrets.values_mut() {
+            s.value = None;
+        }
+        toml::to_string_pretty(&p).unwrap_or_default()
+    }
+
     /// Secrets as `NAME@HOST` / `NAME=VALUE@HOST` specs for `secrets::parse`.
     pub fn secret_specs(&self) -> Vec<String> {
         self.secrets
@@ -148,9 +184,8 @@ impl Policy {
     }
 }
 
-/// Parse `run`'s arguments. Returns the policy, the command, the session
-/// directory (if given) and the quiet flag.
-pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, Option<PathBuf>, bool), String> {
+/// Parse `run`'s arguments. Returns the policy, the command and the run options.
+pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, RunOpts), String> {
     let mut pol: Option<Policy> = None;
     let (mut rootfs, mut work) = (None::<String>, None::<PathBuf>);
     let mut allow: Vec<String> = vec![];
@@ -162,12 +197,20 @@ pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, Option<PathBuf
     let mut workspace_mode: Option<String> = None;
     let (mut mem, mut pids, mut cpu) = (None::<String>, None::<u32>, None::<f64>);
     let (mut isolation, mut runsc) = (None::<String>, None::<String>);
-    let mut session: Option<PathBuf> = None;
-    let mut quiet = false;
+    let mut opts = RunOpts::default();
     let mut cmd: Vec<String> = vec![];
 
-    let mut it = args.iter();
+    let mut it = args.iter().peekable();
     while let Some(a) = it.next() {
+        if a == "--learn" {
+            // Optional path: the next argument, unless it is a flag or `--`.
+            let path = match it.peek() {
+                Some(n) if !n.starts_with("--") => it.next().map(PathBuf::from),
+                _ => None,
+            };
+            opts.learn = Some(path);
+            continue;
+        }
         let mut need = |what: &str| -> Result<String, String> {
             it.next().cloned().ok_or_else(|| format!("{what} needs a value"))
         };
@@ -197,8 +240,8 @@ pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, Option<PathBuf
             "--mem" => mem = Some(need("--mem")?),
             "--pids" => pids = Some(need("--pids")?.parse().map_err(|_| "--pids: expected a number")?),
             "--cpu" => cpu = Some(need("--cpu")?.parse().map_err(|_| "--cpu: expected a number of cores")?),
-            "--session" => session = Some(PathBuf::from(need("--session")?)),
-            "--quiet" => quiet = true,
+            "--session" => opts.session = Some(PathBuf::from(need("--session")?)),
+            "--quiet" => opts.quiet = true,
             "--" => {
                 cmd = it.cloned().collect();
                 break;
@@ -254,5 +297,5 @@ pub fn from_args(args: &[String]) -> Result<(Policy, Vec<String>, Option<PathBuf
         };
         p.secrets.insert(name, SecretSpec { only: host.to_string(), value });
     }
-    Ok((p, cmd, session, quiet))
+    Ok((p, cmd, opts))
 }

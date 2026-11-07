@@ -154,6 +154,9 @@ pub struct Proxy {
     tls: Option<Arc<Tls>>,
     /// host → fixed address (test upstreams only).
     maps: HashMap<String, SocketAddr>,
+    /// Learn mode: destinations outside the allow list are let through and
+    /// collected here, as allow-list entries.
+    learn: Option<std::sync::Mutex<std::collections::BTreeSet<String>>>,
     /// Connections being handled right now. The supervisor waits for this to
     /// reach zero (briefly) after the box exits, so the last tunnel's record
     /// line is not lost to process exit.
@@ -167,8 +170,22 @@ impl Proxy {
         secrets: HashMap<String, Vec<Secret>>,
         tls: Option<Arc<Tls>>,
         maps: HashMap<String, SocketAddr>,
+        learn: bool,
     ) -> Arc<Proxy> {
-        Arc::new(Proxy { allow, record, secrets, tls, maps, active: std::sync::atomic::AtomicUsize::new(0) })
+        Arc::new(Proxy {
+            allow,
+            record,
+            secrets,
+            tls,
+            maps,
+            learn: learn.then(|| std::sync::Mutex::new(std::collections::BTreeSet::new())),
+            active: std::sync::atomic::AtomicUsize::new(0),
+        })
+    }
+
+    /// The destinations learn mode let through, as allow-list entries.
+    pub fn learned(&self) -> Vec<String> {
+        self.learn.as_ref().map(|m| m.lock().unwrap().iter().cloned().collect()).unwrap_or_default()
     }
 
     /// Accept forever; one thread per connection. Runs in the supervisor.
@@ -240,8 +257,17 @@ impl Proxy {
             Ok(x) => x,
             Err(why) => return self.refuse(conn, 400, why, json!({ "target": truncate(target) })),
         };
+        let mut learned_now = false;
         if !self.allow.allows(&host, port) {
-            return self.refuse(conn, 403, "not in the allow list", json!({ "host": host, "port": port }));
+            match &self.learn {
+                Some(set) => {
+                    // Learn mode: let it through, remember it as an entry.
+                    let entry = if port == 443 { host.clone() } else { format!("{host}:{port}") };
+                    set.lock().unwrap().insert(entry);
+                    learned_now = true;
+                }
+                None => return self.refuse(conn, 403, "not in the allow list", json!({ "host": host, "port": port })),
+            }
         }
 
         // Resolve: a test map, an IP literal (allowed by name above), or DNS
@@ -291,7 +317,8 @@ impl Proxy {
         self.record.event(
             "net",
             json!({
-                "verdict": "allowed", "mode": "tunnel", "host": host, "port": port, "addr": used,
+                "verdict": if learned_now { "learned" } else { "allowed" }, "mode": "tunnel",
+                "host": host, "port": port, "addr": used,
                 "bytes_out": out_bytes, "bytes_in": in_bytes,
                 "ms": t0.elapsed().as_millis() as u64,
             }),
