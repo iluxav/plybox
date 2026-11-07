@@ -641,6 +641,140 @@ fn copy_tree(from: &Path, to: &Path) -> Result<(), String> {
     Ok(())
 }
 
+// --------------------------------------------------------- diff --patch
+
+/// Largest file `diff --patch` compares line by line; bigger ones are named.
+const PATCH_MAX_FILE: u64 = 1 << 20;
+
+/// One side of a compared path, read without following symlinks.
+enum Side {
+    Absent,
+    File(Vec<u8>),
+    Big(u64),
+    Link(PathBuf),
+    Dir,
+    Other,
+}
+
+impl Side {
+    fn read(path: Option<&Path>) -> Side {
+        use std::os::unix::fs::OpenOptionsExt;
+        let Some(path) = path else { return Side::Absent };
+        let Ok(md) = std::fs::symlink_metadata(path) else { return Side::Absent };
+        let ft = md.file_type();
+        if ft.is_symlink() {
+            return std::fs::read_link(path).map(Side::Link).unwrap_or(Side::Other);
+        }
+        if ft.is_dir() {
+            return Side::Dir;
+        }
+        if !ft.is_file() {
+            return Side::Other;
+        }
+        // O_NOFOLLOW: if the path became a symlink since the check, the
+        // open fails instead of reading wherever it points.
+        let Ok(mut f) = OpenOptions::new().read(true).custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK).open(path) else {
+            return Side::Other;
+        };
+        match f.metadata() {
+            Ok(m) if m.is_file() && m.len() > PATCH_MAX_FILE => Side::Big(m.len()),
+            Ok(m) if m.is_file() => {
+                let mut buf = Vec::with_capacity(m.len() as usize);
+                match std::io::Read::read_to_end(&mut std::io::Read::take(&mut f, PATCH_MAX_FILE + 1), &mut buf) {
+                    Ok(_) if buf.len() as u64 > PATCH_MAX_FILE => Side::Big(buf.len() as u64),
+                    Ok(_) => Side::File(buf),
+                    Err(_) => Side::Other,
+                }
+            }
+            _ => Side::Other,
+        }
+    }
+
+    fn describe(&self) -> String {
+        match self {
+            Side::Absent => "absent".into(),
+            Side::File(b) => format!("file, {} bytes", b.len()),
+            Side::Big(n) => format!("file, {n} bytes (too large to show)"),
+            Side::Link(t) => format!("symlink → {}", t.display()),
+            Side::Dir => "directory".into(),
+            Side::Other => "special or unreadable file".into(),
+        }
+    }
+}
+
+fn private_tmp() -> Result<PathBuf, String> {
+    use std::os::unix::fs::DirBuilderExt;
+    let dir = std::env::temp_dir().join(format!("plybox-patch-{}-{:08x}", std::process::id(), random_u32()));
+    std::fs::DirBuilder::new().mode(0o700).create(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    Ok(dir)
+}
+
+impl Session {
+    /// `plybox diff --patch`: the changes as a unified diff, workspace → box.
+    /// The session's files are the box's work, so nothing is followed: each
+    /// side is read with O_NOFOLLOW into a private copy and `diff -u`
+    /// compares the copies. A symlink is shown by its target, never read.
+    pub fn print_patch(&self, changes: &[Change]) -> Result<(), String> {
+        let tmp = private_tmp()?;
+        let mut result = Ok(());
+        for c in changes {
+            let rel = c.path();
+            let (old, new) = match c {
+                Change::Added(_) => (None, Some(self.upper().join(rel))),
+                Change::Modified(_) => (Some(self.workspace.join(rel)), Some(self.upper().join(rel))),
+                Change::Deleted(_) => (Some(self.workspace.join(rel)), None),
+                Change::Replaced(_) => {
+                    println!("R  {}/  (directory replaced as a whole; its files are not compared)", rel.display());
+                    continue;
+                }
+            };
+            if let Err(e) = patch_one(&tmp, rel, Side::read(old.as_deref()), Side::read(new.as_deref())) {
+                result = Err(e);
+                break;
+            }
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+        if changes.is_empty() {
+            println!("(the box changed nothing)");
+        }
+        result
+    }
+}
+
+fn patch_one(tmp: &Path, rel: &Path, old: Side, new: Side) -> Result<(), String> {
+    let name = rel.display().to_string();
+    let text_side = |s: &Side| matches!(s, Side::Absent | Side::File(_));
+    if !(text_side(&old) && text_side(&new)) {
+        println!("--- a/{name}\n+++ b/{name}\n  was: {}\n  now: {}", old.describe(), new.describe());
+        return Ok(());
+    }
+    let write = |which: &str, s: &Side| -> Result<(PathBuf, String), String> {
+        match s {
+            Side::File(bytes) => {
+                let p = tmp.join(which);
+                std::fs::write(&p, bytes).map_err(|e| format!("{}: {e}", p.display()))?;
+                Ok((p, format!("{which}/{name}")))
+            }
+            _ => Ok((PathBuf::from("/dev/null"), "/dev/null".into())),
+        }
+    };
+    let (a, la) = write("a", &old)?;
+    let (b, lb) = write("b", &new)?;
+    let out = std::process::Command::new("diff")
+        .args(["-u", "--label", &la, "--label", &lb])
+        .arg(&a)
+        .arg(&b)
+        .output()
+        .map_err(|e| format!("diff: {e} (diff --patch needs GNU diffutils)"))?;
+    match out.status.code() {
+        Some(0) | Some(1) => {
+            print!("{}", String::from_utf8_lossy(&out.stdout));
+            Ok(())
+        }
+        _ => Err(format!("diff {name}: {}", String::from_utf8_lossy(&out.stderr).trim())),
+    }
+}
+
 /// Print a diff listing the way `git status --short` does.
 pub fn print_changes(changes: &[Change]) {
     for c in changes {

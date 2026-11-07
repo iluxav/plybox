@@ -42,7 +42,7 @@ fn usage() -> ! {
          \x20      plybox images                   list pulled images\n\
          \x20      plybox sessions [--prune]       list sessions and their status; --prune removes applied/empty ones\n\
          \x20      plybox discard SESSION|--last   delete a session and its unapplied changes\n\
-         \x20      plybox diff  SESSION|--last     what the box changed in its workspace copy\n\
+         \x20      plybox diff  SESSION|--last [--patch]   what the box changed; --patch shows the lines\n\
          \x20      plybox apply SESSION|--last     copy those changes onto the real workspace\n\
          \x20      plybox version"
     );
@@ -118,7 +118,8 @@ fn main() {
         }
         Some("diff") | Some("apply") => {
             let which = args[0].as_str();
-            let target = args.get(1).map(String::as_str).unwrap_or("--last");
+            let patch = which == "diff" && args[1..].iter().any(|a| a == "--patch" || a == "-p");
+            let target = args[1..].iter().map(String::as_str).find(|a| *a != "--patch" && *a != "-p").unwrap_or("--last");
             let session = workspace::Session::open(target).unwrap_or_else(|e| {
                 eprintln!("plybox: {e}");
                 exit(1)
@@ -139,6 +140,12 @@ fn main() {
             }
             let result = if which == "diff" { session.changes() } else { session.apply() };
             match result {
+                Ok(changes) if patch => {
+                    if let Err(e) = session.print_patch(&changes) {
+                        eprintln!("plybox: {e}");
+                        exit(1)
+                    }
+                }
                 Ok(changes) => {
                     workspace::print_changes(&changes);
                     if which == "apply" {

@@ -55,6 +55,17 @@ SC="$(last)"; DC="$XDG_STATE_HOME/plybox/sessions/$SC"
 check "run end removes CA, bundle, socket; keeps the copy" $? "left: $(ls -A "$DC" | sort | tr '\n' ' ')"
 "$PLYBOX" discard "$SC" >/dev/null 2>&1
 
+# --- 1c. diff --patch: the lines, and never the target of a symlink ----------
+WP="$T/wsp"; mkdir -p "$WP"; printf 'one\ntwo\n' > "$WP/f.txt"; printf 'gone line\n' > "$WP/del.txt"
+CANARY="$T/canary.txt"; echo "CANARY-$$-not-for-the-box" > "$CANARY"
+"$PLYBOX" run --quiet --work "$WP" -- sh -c "printf 'one\nTWO\n' > f.txt; echo hello > new.txt; unlink del.txt; ln -s '$CANARY' peek" >/dev/null 2>&1
+SP="$(last)"; "$PLYBOX" diff "$SP" --patch > "$T/patch.txt" 2>&1; code=$?
+[ $code -eq 0 ] && grep -qx -- '-two' "$T/patch.txt" && grep -qx -- '+TWO' "$T/patch.txt" && grep -qx -- '+hello' "$T/patch.txt" && grep -qx -- '-gone line' "$T/patch.txt" && grep -q -- '--- a/f.txt' "$T/patch.txt"
+check "diff --patch shows edited, added and deleted lines" $? "$(grep -c '^[-+][^-+]' "$T/patch.txt") changed lines"
+grep -q 'symlink → ' "$T/patch.txt" && ! grep -q 'CANARY' "$T/patch.txt"
+check "diff --patch names a symlink, never reads its target" $? "$(grep 'symlink' "$T/patch.txt" | head -1 | cut -c1-60)"
+"$PLYBOX" discard "$SP" >/dev/null 2>&1
+
 # --- 2. apply never writes through a symlink that leaves the workspace ------
 W2="$T/ws2"; OUT="$T/outside"; mkdir -p "$W2" "$OUT"; echo original > "$OUT/target.txt"
 ln -s "$OUT/target.txt" "$W2/cfg"

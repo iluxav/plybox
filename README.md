@@ -47,7 +47,7 @@ plybox run --image mwader/static-ffmpeg:7.1 -- /ffmpeg -i in.mov out.mp4
 ANTHROPIC_API_KEY=sk-… plybox run --secret ANTHROPIC_API_KEY@api.anthropic.com \
   --allow api.anthropic.com --allow registry.npmjs.org --mem 2G --pids 512 \
   -- claude -p "fix the tests"
-plybox diff --last      # what it changed, held in the session
+plybox diff --last      # what it changed, held in the session (--patch: line by line)
 plybox apply --last     # copy those changes onto your directory; the session keeps only its record
 plybox sessions         # every session: PENDING n / applied / no changes
 plybox discard ID       # drop a session's changes; `plybox sessions --prune` clears applied + empty
@@ -137,7 +137,7 @@ whole apply if any change would land outside the workspace
 (`make test-sessions`: 22 session checks, 35 resume checks).
 
 Known gaps: resume restores only workspace files, not processes or agent
-conversation history; `plybox diff` lists files, not lines; `ioctl` is allowed for every
+conversation history; `ioctl` is allowed for every
 request code; x86_64 only; private registries (login) are not supported
 yet; under gVisor, an extra `--ro-bind` target missing from an image is
 created inside the cached image; exfiltration *through an allowed host* is
