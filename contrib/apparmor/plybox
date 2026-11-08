@@ -5,7 +5,7 @@
 # It does not confine plybox further. Install:
 #
 #   sudo install -o root -g root -m 0755 plybox /usr/local/bin/plybox
-#   sudo install -m 0644 contrib/apparmor/plybox /etc/apparmor.d/plybox
+#   sudo install -m 0644 plybox.apparmor /etc/apparmor.d/plybox   # this file
 #   sudo apparmor_parser -r /etc/apparmor.d/plybox
 #
 # Keep the binary at a root-owned path: AppArmor attaches by path, so a

@@ -8,6 +8,15 @@ All notable changes to plybox are listed here. The format follows
 
 The first public release.
 
+### Added
+
+- Ubuntu 24.04+: when AppArmor's user-namespace restriction blocks the
+  gVisor tier, plybox stops before launch and names the cause and the fix,
+  instead of `unshare`'s bare "Operation not permitted". The fix,
+  `contrib/apparmor/plybox` (release asset `plybox.apparmor`), allows user
+  namespaces for `/usr/local/bin/plybox` only. A CI job checks both on
+  Ubuntu 24.04 with the restriction on.
+
 ### Changed
 
 - The README leads with a Python agent under default gVisor, direct output

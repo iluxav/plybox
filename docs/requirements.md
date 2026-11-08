@@ -7,8 +7,9 @@ can reject it before any workload starts.
 
 Evidence checked on 2026-11-07: the local test machine is Omarchy 4.5 / Arch,
 Linux `7.2.15-1-omarchy`, x86_64, util-linux `2.42.4`, with bundled gVisor
-`release-20261102.0`. The other distributions and the AppArmor procedure
-below are **researched, not tested on those systems**. Upstream documentation
+`release-20261102.0`. Ubuntu 24.04 with its AppArmor restriction on is
+verified in CI (below). The other distributions are **researched, not
+tested on those systems**. Upstream documentation
 describes prerequisites; it does not certify this plybox build.
 
 Local command verification passed the exact outer `unshare` flags, an
@@ -120,14 +121,14 @@ allowlists, so there is no per-plybox exception to a host-wide zero limit.
 
 ## Distribution notes
 
-Every row below is **researched / unverified for plybox**. Run the smoke
+Every row below except Ubuntu 24.04 is **researched / unverified for plybox**. Run the smoke
 commands on the actual image, as its administrator may have changed the
 defaults.
 
 | Host | Evidence and practical expectation |
 | --- | --- |
 | Ubuntu 23.10 | The AppArmor userns restriction was introduced as opt-in. The later 24.04 release notes explicitly confirm it was not enabled by default in 23.10; the original announcement's plan to enable it later is not evidence that this happened. Read the live sysctl. [Announcement](https://ubuntu.com/blog/ubuntu-23-10-restricted-unprivileged-user-namespaces), [24.04 release notes](https://documentation.ubuntu.com/release-notes/24.04/#unprivileged-user-namespace-restrictions) |
-| Ubuntu 24.04 and later | 24.04 enabled the restriction: an unconfined process may enter a user namespace but is denied capabilities there. Expect an AppArmor exception to be needed for this launcher. Later releases add or change profiles, so inspect the installed policy rather than assuming identical child transitions across releases. [24.04 security changes](https://ubuntu.com/blog/whats-new-in-security-for-ubuntu-24-04-lts), [current AppArmor guidance](https://documentation.ubuntu.com/security/security-features/privilege-restriction/apparmor/), [26.04 profile changes](https://documentation.ubuntu.com/release-notes/26.04/summary-for-lts-users/#new-apparmor-sandboxing-profiles) |
+| Ubuntu 24.04 and later | **Verified in CI (24.04.5).** The restriction is on by default; plybox explains it and needs the [AppArmor profile](#ubuntu-2404-and-later). Later releases add or change profiles: run the smoke commands. [24.04 security changes](https://ubuntu.com/blog/whats-new-in-security-for-ubuntu-24-04-lts), [26.04 profile changes](https://documentation.ubuntu.com/release-notes/26.04/summary-for-lts-users/#new-apparmor-sandboxing-profiles) |
 | Debian 12 / 13 | Their release kernel series are 6.1 / 6.12. Debian enables unprivileged user namespaces by default starting with Debian 11, as also documented by the package maintainer in Debian 13. These are plausible hosts without a default userns exception, subject to local hardening. [Debian 12](https://www.debian.org/releases/bookworm/amd64/release-notes/ch-whats-new.en.html), [Debian 13](https://www.debian.org/releases/trixie/release-notes/whats-new.en.html), [Debian namespace default](https://sources.debian.org/src/charliecloud/0.38-3/debian/README.Debian) |
 | RHEL 9 | Its 5.14 kernel series exceeds the pinned runtime's stated floor. The official rootless-container procedure installs Podman and creates an account, without enabling userns through a sysctl. This supports an **inference** that the documented standard installation permits userns; it does not establish the effective quota on every pristine/minimal image or validate this launch chain. SELinux defaults to enforcing. [RHEL kernels](https://access.redhat.com/articles/red-hat-enterprise-linux-release-dates), [rootless setup, §1.6](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html-single/building_running_and_managing_containers/index), [SELinux default](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/epub/using_selinux/red_hat_enterprise_linux-9-using_selinux-en-us.epub) |
 | Rocky Linux 9 | Official documentation explicitly states that unprivileged user namespaces and cgroup v2 are enabled by default. It checks for a positive `user.max_user_namespaces`, showing `31790` as an example, not a required plybox value. This is stronger default-permission evidence, but still not a plybox/runsc test. Its 5.14 kernel series exceeds the stated floor; SELinux defaults to enforcing. [Namespace defaults](https://docs.rockylinux.org/guides/containers/rootless_podman_advanced/), [kernel releases](https://docs.rockylinux.org/releases/), [SELinux default](https://docs.rockylinux.org/guides/security/learning_selinux/) |
@@ -171,93 +172,60 @@ SELinux or blindly importing `audit2allow` output is not the prescribed
 fix. These administrative examples were not executed during this research.
 [RHEL SELinux troubleshooting](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/epub/using_selinux/red_hat_enterprise_linux-9-using_selinux-en-us.epub)
 
-## AppArmor: a scoped exception to validate on Ubuntu
+## Ubuntu 24.04 and later
 
-**This is an upstream-documented mechanism adapted to plybox, not a tested
-plybox profile.** It is an exception for one installed program and its
-inheriting runtime processes. It is not a complete least-privilege
-AppArmor confinement policy. Ubuntu documents the named `unconfined`
-profile mode with an explicit `userns,` grant for applications that need
-namespace setup. [Ubuntu's profile example](https://documentation.ubuntu.com/release-notes/24.04/#unprivileged-user-namespace-restrictions)
+**Verified** on GitHub's `ubuntu-24.04` runner (Ubuntu 24.04.5 LTS, kernel
+7.0.0-1017-azure, AppArmor 4.0.1) with the restriction left on, in every
+push to `main` by the [Ubuntu AppArmor workflow](../.github/workflows/ubuntu-apparmor.yml).
 
-For a reviewed binary installed at the fixed, administrator-controlled
-path `/usr/local/bin/plybox`, an administrator can create
-`/etc/apparmor.d/plybox` with:
+Ubuntu 24.04 turns on `kernel.apparmor_restrict_unprivileged_userns`: an
+unconfined program may create a user namespace but gets no capabilities
+in it, so the gVisor launch cannot set up its network namespace. plybox
+checks for this before starting a box and stops with:
 
 ```text
-abi <abi/4.0>,
-include <tunables/global>
-
-profile plybox /usr/local/bin/plybox flags=(unconfined) {
-  userns,
-}
+plybox: this host blocks the user namespaces gVisor needs: Ubuntu's AppArmor restriction is on (sysctl kernel.apparmor_restrict_unprivileged_userns = 1).
+  An administrator can allow plybox alone with an AppArmor profile: https://github.com/iluxav/plybox/blob/main/docs/requirements.md#ubuntu-2404-and-later
 ```
 
-Use the actual canonical installation path. Do not attach the exception to
-every executable in a home directory, to `/usr/bin/unshare`, or to a whole
-runtime-cache wildcard: those would authorize independent callers as
-well. A user-writable attached executable can be replaced by that user;
-the fixed administrator-controlled path is preferable when the exception
-is intended to trust only a reviewed installation. AppArmor attachment is
-path based. [Profile attachment and execution modes](https://manpages.ubuntu.com/manpages/noble/man5/apparmor.d.5.html)
-
-This also trusts the runtime plybox executes. The CLI and a trusted policy
-can select an external `runsc`; the scoped exception does not certify that
-executable or confine its behavior. If callers are not trusted to choose
-host runtimes, enforce an administrator-controlled runtime through
-[operator rules](operator.md) and control the launch environment. A fixed
-plybox path alone is not a policy restricting all child code to the
-bundled runtime. See [runtime selection](../src/gvisor.rs).
-
-Load that specific file, then run the smoke test as the normal user:
+The fix is an AppArmor profile that allows user namespaces for plybox
+alone, [`contrib/apparmor/plybox`](../contrib/apparmor/plybox). It is the
+same `flags=(unconfined)` plus `userns,` form Ubuntu uses for browsers and
+container tools. Install it as root, with the binary at the path the
+profile names:
 
 ```sh
+sudo install -o root -g root -m 0755 plybox /usr/local/bin/plybox
+sudo install -m 0644 plybox.apparmor /etc/apparmor.d/plybox   # release asset, or contrib/apparmor/plybox
 sudo apparmor_parser -r /etc/apparmor.d/plybox
-/usr/local/bin/plybox run -- /bin/true
-/usr/local/bin/plybox run --mem 512M --pids 256 --cpu 1 -- /bin/true
+plybox run -- /bin/true      # as your normal user; exits 0
 ```
 
-Loading with `apparmor_parser -r` follows the
-[Ubuntu administration guide](https://ubuntu.com/server/docs/how-to/security/apparmor/).
-These commands are a proposed validation procedure; they were not executed
-on the local Arch test host.
+What the CI job checks with the restriction on:
 
-Why the attachment belongs on plybox requires checking the whole process
-chain:
+- without the profile, plybox exits 1 with the message above;
+- with it, the default tier, the README's `python:3.13-slim` check,
+  `--mem/--pids/--cpu` limits and placeholder-secret HTTPS through the
+  proxy all work;
+- every process of a running box (plybox, `unshare`, `runsc`, gofer,
+  sentry, systrap stubs) carries the `plybox` label, so the exception
+  reaches gVisor by inheritance and needs no rule for the runtime cache;
+- the same binary copied to `/tmp` and a plain `unshare --user --net`
+  are still blocked: the exception is attached to the one path.
 
-1. AppArmor's unconfined execution behavior uses a profile transition with
-   inheritance fallback (`pix`). With no matching child profile, helpers
-   inherit the named profile; a matching child profile can change that.
-   The upstream project also records this behavior for named unconfined
-   profiles. [AppArmor execution rules](https://manpages.ubuntu.com/manpages/noble/man5/apparmor.d.5.html),
-   [upstream inheritance report](https://gitlab.com/apparmor/apparmor/-/issues/527)
-2. plybox uses `systemd-run --scope`, whose command is executed by
-   `systemd-run` itself. It is not launched as a detached service by the
-   user manager. Thus this optional wrapper does not inherently sever the
-   process/profile inheritance chain.
-   [systemd-run scope semantics](https://www.freedesktop.org/software/systemd/man/latest/systemd-run.html)
-3. The same reasoning covers `unshare`, cached `runsc`, its re-execs and
-   sidecar binaries **only while they retain that profile**. This is a
-   source-derived expectation for the displayed launch chain. Custom
-   profiles, confined callers, stacked policies, and distribution updates
-   can invalidate it; actual startup and labels must be checked.
-   [Launch source](../src/gvisor.rs), [runtime sidecars](../third_party/gvisor/README.md)
+The gVisor security probes were also run under this profile with the
+restriction on (40 closed, the SSH-agent probe unavailable, seven
+workloads passing): [run 42439561507](https://github.com/iluxav/plybox/actions/runs/42439561507).
 
-If the smoke test still fails, inspect kernel/audit logs for the denied
-operation and profile name. For example, an administrator can read
-`journalctl -k --since '-5 min'` and search for `apparmor` / `DENIED`.
-During a longer `plybox run -- /bin/sleep 30`, inspect host runtime process
-labels with `ps -e -o pid,ppid,label,args`. Check the limits-enabled launch
-too, including whether a systemd scope was actually selected. Adjust a
-conflicting policy only after identifying the transition. Ubuntu describes
-using denial logs to maintain local overrides.
-[Ubuntu profile troubleshooting](https://documentation.ubuntu.com/release-notes/26.04/summary-for-lts-users/#new-apparmor-sandboxing-profiles)
-
-There is no validated recipe here for a fully confined plybox AppArmor
-policy. If the scoped exception is unacceptable or does not work on the
-target policy, use an administrator-provisioned VM satisfying the
-requirements. Disabling AppArmor's namespace restriction system-wide is
-not required by this procedure.
+Keep the binary root-owned at that path. AppArmor attaches by path, so a
+profile on a user-writable path extends the exception to anything put
+there. To use another path, change the path in the profile. The
+profile trusts what plybox runs: if callers may choose `--runsc`, fix the
+runtime with [operator rules](operator.md). Turning the restriction off
+for the whole machine (`sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`)
+also works but removes Ubuntu's protection for every program; prefer the
+profile. Later Ubuntu releases may add profiles that change transitions;
+if a run fails there, `journalctl -k | grep apparmor=` shows the denial.
 
 ## VPSs and nested containers
 

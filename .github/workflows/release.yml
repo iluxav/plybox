@@ -38,6 +38,7 @@ jobs:
           mkdir dist
           cp "target/$TARGET/release/plybox" dist/plybox-linux-x86_64
           cp third_party/gvisor/LICENSE dist/gvisor-LICENSE
+          cp contrib/apparmor/plybox dist/plybox.apparmor
           if [ -f third_party/gvisor/NOTICE ]; then cp third_party/gvisor/NOTICE dist/gvisor-NOTICE; fi
           cd dist && sha256sum plybox-linux-x86_64 > plybox-linux-x86_64.sha256
       - name: Publish the release

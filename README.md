@@ -22,9 +22,9 @@ plybox runs untrusted AI agents on any Linux box. One binary. No KVM, no Docker,
 - Each box runs through gVisor's user-space kernel, with no workload
   capabilities and a seccomp allowlist.
 
-**“Any Linux box” has limits today:** x86_64 only, with user namespaces
-permitted by the host. Ubuntu 24.04+ needs an administrator's AppArmor
-exception; restricted container VPSes may not work. See [Requirements](#requirements).
+**“Any Linux box”, with limits:** x86_64 only, and the host must allow
+user namespaces. Ubuntu 24.04+ needs a one-time AppArmor profile, which
+ships with plybox. See [Requirements](#requirements).
 
 ## Quick start
 
@@ -114,24 +114,33 @@ util-linux `unshare` with the flags below. User, network and the runtime's
 nested namespaces must be permitted. The runtime cache must be writable
 and executable. No KVM or nested hardware virtualization is needed.
 
-Only the first row has been tested here. Distro defaults are evidence
-about prerequisites, not a claim that this exact binary passed there:
+The first two "Verified" rows were run; the rest are researched. Distro
+defaults are evidence about prerequisites, not a claim that this exact
+binary passed there:
 
 | Host | Status and action |
 |---|---|
 | Omarchy 4.5 / Arch, kernel 7.2.15, util-linux 2.42.4 | **Verified locally:** default gVisor, Python image, bind output, proxy secrets and systemd cgroup limits |
 | Ubuntu 23.10 | **Researched:** userns restriction was opt-in; check the actual host policy |
-| Ubuntu 24.04+ | **Researched:** AppArmor restricts namespace capabilities by default; use a fixed-path plybox profile, then validate child inheritance |
+| Ubuntu 24.04+ | **Verified in CI** (24.04.5, kernel 7.0) with the restriction on: install the [bundled AppArmor profile](docs/requirements.md#ubuntu-2404-and-later) once; without it plybox stops and says so |
 | Debian 12 / 13 | **Researched:** unprivileged user namespaces enabled by default; hardened images can differ |
 | RHEL / Rocky / AlmaLinux 9 | **Researched:** Rocky explicitly documents userns enabled; RHEL rootless guidance suggests it; Alma's kernel supports it but the effective default quota was not established. SELinux policy also matters |
 | Amazon Linux 2023 | **Researched:** kernel/cgroup prerequisites documented; default permission for this namespace sequence not established |
 | Full VM / container VPS | Full VMs need no nested virtualization. Docker's default policy blocks required operations; LXC/LXD/OpenVZ depend on the provider's nesting and security policy |
 
-See [distro sources, scoped AppArmor profile and targeted remedies](docs/requirements.md).
-The proposed Ubuntu profile grants `userns,` to a fixed administrator-owned
-plybox path, with inherited execution for its helpers; **it has not been
-validated on Ubuntu here**. Do not treat a distro name or a successful
-user-namespace-only check as proof that the complete launcher works.
+On Ubuntu 24.04+, as root, once. The profile is
+[`contrib/apparmor/plybox`](contrib/apparmor/plybox), also published with
+each release as `plybox.apparmor`:
+
+```sh
+sudo install -o root -g root -m 0755 plybox /usr/local/bin/plybox
+sudo install -m 0644 plybox.apparmor /etc/apparmor.d/plybox
+sudo apparmor_parser -r /etc/apparmor.d/plybox
+```
+
+The profile allows user namespaces for that one path only; a copy
+elsewhere and plain `unshare` stay blocked. See
+[distro sources and the Ubuntu details](docs/requirements.md).
 
 Check the actual user and network namespace combination, then the full box:
 
