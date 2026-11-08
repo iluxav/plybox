@@ -24,7 +24,7 @@
 //! process), and TasksMax does not bound guest processes 1:1.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use serde_json::{json, Value};
 
@@ -220,6 +220,37 @@ pub struct Runtime {
     verification_us: u64,
 }
 
+/// Ubuntu (23.10 opt-in, 24.04+ default) can deny capabilities inside new
+/// user namespaces through AppArmor. The launch then dies in `unshare` with
+/// a bare "Operation not permitted". Only where that knob is on, try the
+/// same namespace step first, so the failure names its cause and the fix.
+pub fn check_userns() -> Result<(), String> {
+    let knob = std::fs::read_to_string("/proc/sys/kernel/apparmor_restrict_unprivileged_userns").ok();
+    if !userns_restricted(knob.as_deref()) {
+        return Ok(());
+    }
+    let probe = Command::new("unshare")
+        .args(["--user", "--map-current-user", "--keep-caps", "--net", "--", "true"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    match probe {
+        Ok(s) if !s.success() => Err(USERNS_HELP.into()),
+        // Passed, or no unshare at all: the launch reports that as before.
+        _ => Ok(()),
+    }
+}
+
+fn userns_restricted(knob: Option<&str>) -> bool {
+    knob.map(str::trim) == Some("1")
+}
+
+const USERNS_HELP: &str = "this host blocks the user namespaces gVisor needs: Ubuntu's AppArmor \
+restriction is on (sysctl kernel.apparmor_restrict_unprivileged_userns = 1).\n  \
+An administrator can allow plybox alone with an AppArmor profile: \
+https://github.com/iluxav/plybox/blob/main/docs/requirements.md#ubuntu-2404-and-later";
+
 pub fn find_runsc(configured: Option<&str>) -> Result<Runtime, String> {
     const HELP: &str = "run `make tools` in the source checkout and pass --runsc tests/tools/runsc, or install runsc on PATH from https://gvisor.dev/docs/user_guide/install/; to opt in to namespaces instead, pass --isolation ns";
     if let Some(p) = configured {
@@ -249,4 +280,17 @@ fn external_runtime(path: &Path, source: &'static str) -> Result<Runtime, String
     let mut file = std::fs::File::open(&path).map_err(|e| format!("runsc {}: {e}", path.display()))?;
     let sha512 = crate::embedded::sha512(&mut file).map_err(|e| format!("runsc checksum: {e}"))?;
     Ok(Runtime { path, source, sha512, release: None, payload_sha512: None, verification_us: 0 })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn userns_probe_runs_only_where_ubuntu_restricts() {
+        assert!(userns_restricted(Some("1\n")));
+        assert!(!userns_restricted(Some("0\n")));
+        assert!(!userns_restricted(None)); // no such knob: not Ubuntu's AppArmor
+        assert!(USERNS_HELP.contains("sysctl kernel.apparmor_restrict_unprivileged_userns"));
+    }
 }

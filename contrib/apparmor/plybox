@@ -1,0 +1,22 @@
+# AppArmor exception for plybox on Ubuntu 23.10+ (on by default from 24.04),
+# where kernel.apparmor_restrict_unprivileged_userns=1 denies capabilities
+# inside new user namespaces. It lets this one binary (and the unshare and
+# gVisor processes it starts, which inherit the profile) create them.
+# It does not confine plybox further. Install:
+#
+#   sudo install -o root -g root -m 0755 plybox /usr/local/bin/plybox
+#   sudo install -m 0644 contrib/apparmor/plybox /etc/apparmor.d/plybox
+#   sudo apparmor_parser -r /etc/apparmor.d/plybox
+#
+# Keep the binary at a root-owned path: AppArmor attaches by path, so a
+# user-writable path would extend the exception to whatever is put there.
+
+abi <abi/4.0>,
+include <tunables/global>
+
+profile plybox /usr/local/bin/plybox flags=(unconfined) {
+  userns,
+
+  # Site-specific additions and overrides.
+  include if exists <local/plybox>
+}

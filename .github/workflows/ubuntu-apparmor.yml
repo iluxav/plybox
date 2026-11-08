@@ -1,0 +1,100 @@
+name: Ubuntu AppArmor
+
+# Ubuntu 24.04 as shipped: kernel.apparmor_restrict_unprivileged_userns=1.
+# ci.yml turns that off; this job never does. It checks that plybox
+# explains the block, that contrib/apparmor/plybox lifts it for plybox
+# alone, and that the default gVisor tier then works end to end.
+on:
+  push:
+    branches: [main, "ci/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  TARGET: x86_64-unknown-linux-musl
+  CC_x86_64_unknown_linux_musl: musl-gcc
+  BIN: /usr/local/bin/plybox
+
+jobs:
+  apparmor:
+    name: Default tier with the userns restriction on
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Toolchain
+        run: |
+          sudo apt-get update -q && sudo apt-get install -yq musl-tools
+          rustup target add "$TARGET"
+      - name: Build the embedded binary
+        run: make build && ./target/$TARGET/release/plybox version
+
+      - name: The restriction is on
+        run: |
+          v="$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)"
+          echo "::notice title=host::restrict_unprivileged_userns=$v; $(lsb_release -ds); kernel $(uname -r); $(apparmor_parser --version | head -1)"
+          [ "$v" = 1 ]
+
+      - name: Without the profile, plybox stops with the hint
+        run: |
+          esc() { sed -e 's/%/%25/g' | sed -e ':a;N;$!ba;s/\n/%0A/g'; }
+          set +e
+          out="$(./target/$TARGET/release/plybox run -- /bin/true 2>&1)"; code=$?
+          set -e
+          echo "::notice title=no profile (exit $code)::$(printf '%s' "$out" | esc)"
+          [ "$code" -ne 0 ] && grep -q 'apparmor_restrict_unprivileged_userns' <<<"$out"
+
+      - name: Install plybox and the AppArmor profile
+        run: |
+          sudo install -o root -g root -m 0755 target/$TARGET/release/plybox "$BIN"
+          sudo install -m 0644 contrib/apparmor/plybox /etc/apparmor.d/plybox
+          sudo apparmor_parser -r /etc/apparmor.d/plybox
+          sudo aa-status 2>/dev/null | grep -n plybox || true
+
+      - name: Default tier runs
+        run: |
+          "$BIN" run -- /bin/true
+          out="$("$BIN" run --quiet --image python:3.13-slim -- python3 -c 'print("box ready")')"
+          echo "::notice title=python image::$out"
+          [ "$out" = "box ready" ]
+          "$BIN" run --quiet --mem 512M --pids 256 --cpu 1 -- /bin/true
+
+      - name: Process labels during a run
+        run: |
+          esc() { sed -e 's/%/%25/g' | sed -e ':a;N;$!ba;s/\n/%0A/g'; }
+          "$BIN" run --quiet -- /bin/sleep 12 & pid=$!
+          sleep 6
+          labels="$(ps -e -o label:24,args | grep -E 'plybox|unshare|runsc|gvisor' | grep -v grep | cut -c1-140)"
+          echo "::notice title=labels::$(printf '%s' "$labels" | esc)"
+          wait "$pid"
+
+      - name: Secret substitution through the proxy
+        run: |
+          tmp="$(mktemp -d)"
+          python3 tests/helpers/proxy.py mkcert --ca-dir "$tmp/ca" --host fixture.test >/dev/null
+          python3 tests/bench/fixture.py --cert "$tmp/ca/fixture.test.pem" --key "$tmp/ca/fixture.test.key" > "$tmp/fixture.out" 2>&1 &
+          for _ in $(seq 50); do [ -s "$tmp/fixture.out" ] && break; sleep 0.1; done
+          port="$(python3 -c 'import json,sys; print(json.loads(open(sys.argv[1]).readline())["port"])' "$tmp/fixture.out")"
+          mkdir "$tmp/work" && cp tests/bench/workload.py "$tmp/ca/ca.pem" "$tmp/work/"
+          out="$(printf 'GO\nEXIT\n' | "$BIN" run --quiet --work "$tmp/work" \
+            --allow fixture.test --map "fixture.test=127.0.0.1:$port" --trust-ca "$tmp/ca/ca.pem" \
+            --secret BENCH_TOKEN=plybox-benchmark-only-key@fixture.test \
+            -- python3 /work/workload.py agent-secret --port "$port" --ca /work/ca.pem --requests 20 --proxy --secret)"
+          echo "::notice title=secret path::$(tail -1 <<<"$out" | cut -c1-200)"
+          grep -q '"done": true' <<<"$out"
+
+      - name: The exception covers plybox only
+        run: |
+          cp "$BIN" /tmp/plybox-copy
+          if /tmp/plybox-copy run -- /bin/true 2>/dev/null; then echo "::error::a copy at another path ran"; exit 1; fi
+          if unshare --user --map-current-user --keep-caps --net -- /bin/true 2>/dev/null; then echo "::error::plain unshare ran"; exit 1; fi
+          echo "::notice title=scope::a copy at /tmp and plain unshare are still blocked"
+
+      - name: AppArmor denials
+        if: always()
+        run: |
+          esc() { sed -e 's/%/%25/g' | sed -e ':a;N;$!ba;s/\n/%0A/g'; }
+          d="$(sudo journalctl -k --no-pager | grep -i 'apparmor=' | tail -15 | cut -c1-220)"
+          [ -n "$d" ] && echo "::notice title=apparmor log::$(printf '%s' "$d" | esc)" || echo "no apparmor lines"

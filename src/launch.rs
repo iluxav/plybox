@@ -112,6 +112,9 @@ fn run_box(
     let learning = learn.is_some();
     let caps = crate::storage::Caps::parse(&pol)?;
     let gvisor_tier = pol.isolation == "gvisor";
+    if gvisor_tier {
+        gvisor::check_userns()?;
+    }
     let runtime = if gvisor_tier { Some(gvisor::find_runsc(pol.runsc.as_deref())?) } else { None };
     let engine: PathBuf = if let Some(runtime) = &runtime {
         runtime.path.clone()
