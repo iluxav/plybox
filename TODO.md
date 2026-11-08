@@ -45,10 +45,13 @@ secrets and host allowlists alone are common now.
    transfers, a loopback service, JSON CPU work, tmpfs files and idle boxes.
    Five trials per case/tier count whole-box cgroup CPU and RSS/PSS; all
    195 trials passed. See the dated tables and trial data in
-   [docs/research.md](docs/research.md). The README headline is step 4.
-4. **Rewrite the README around the pitch.** Lead with a Python agent and move
-   sessions and `diff`/`apply` lower. Do this after 1–3, so it claims only
-   what's true.
+   [docs/research.md](docs/research.md). The README summarizes these costs.
+4. **Rewrite the README around the pitch — done.** Lead with a Python model
+   call and bind-mode output under gVisor; put namespace sessions lower.
+   Show measured steady-state costs and sourced distro requirements, with
+   local verification distinguished from research. The release download
+   is still missing, and Ubuntu's scoped AppArmor recipe needs validation
+   on Ubuntu before claiming out-of-the-box support.
 5. **Launch:** Show HN and r/selfhosted.
 
 Frozen until the launch check: the namespace tier, the session commands

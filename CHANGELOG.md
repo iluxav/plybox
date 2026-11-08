@@ -10,6 +10,10 @@ The first public release.
 
 ### Changed
 
+- The README leads with a Python agent under default gVisor, direct output
+  files, measured steady-state costs and sourced host requirements.
+  Namespace sessions are an opt-in section; full reference tables and
+  specialized recipes have moved into `docs/`.
 - New runs and policies default to gVisor. Namespace isolation requires
   explicit `--isolation ns` or `isolation = "ns"` (operator overrides still
   take precedence).
