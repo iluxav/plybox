@@ -41,7 +41,7 @@ from urllib.request import Request, urlopen
 request = Request(
     "https://api.anthropic.com/v1/messages",
     data=json.dumps({
-        "model": "claude-haiku-4-5",
+        "model": "claude-haiku-5-5",
         "max_tokens": 128,
         "messages": [{"role": "user", "content": "Say hello in five words."}],
     }).encode(),
@@ -80,7 +80,6 @@ makes `answer.txt` appear there immediately, owned by your user. It also
 lets the agent change any other file in that directory: give it a dedicated
 job directory. Without `bind`, the default gVisor workspace is read-only.
 The key in the agent's environment is a placeholder, not your API key.
-The example uses the [Haiku 4.5 API alias](https://platform.claude.com/docs/en/models/haiku-4-5/overview).
 
 ## Install
 
