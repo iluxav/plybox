@@ -6,6 +6,8 @@ All notable changes to plybox are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-07
+
 The first public release.
 
 ### Added

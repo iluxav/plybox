@@ -1,6 +1,6 @@
 [package]
 name = "plybox"
-version = "0.0.1"
+version = "0.1.0"
 edition = "2021"
 description = "Run AI agents and untrusted code in a box: network by hostname allow list, API keys the box never sees, edits held for review, every decision recorded. No root, no daemon."
 license = "MIT"

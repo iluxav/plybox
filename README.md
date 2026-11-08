@@ -83,10 +83,7 @@ The key in the agent's environment is a placeholder, not your API key.
 
 ## Install
 
-**Pre-release:** the download URL below returned HTTP 404 on 2026-11-07;
-no public release asset is available yet. For this checkout, use the
-[source build instructions](docs/recipes.md#build-plybox-from-source). Once published, the
-release installs by downloading one file:
+Download one file (or [build from source](docs/recipes.md#build-plybox-from-source)):
 
 ```sh
 curl -fL -o plybox https://github.com/iluxav/plybox/releases/latest/download/plybox-linux-x86_64
@@ -94,10 +91,8 @@ chmod +x plybox
 ./plybox version
 ```
 
-The version output from the current source-built release binary is:
-
 ```text
-plybox 0.0.1
+plybox 0.1.0
 gVisor release-20261102.0 (embedded)
 ```
 
